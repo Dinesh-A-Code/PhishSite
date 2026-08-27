@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="PhishSite Privacy Policy">
+  <title>Privacy Policy — PhishSite</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.7;
+      background: #f6f7f9;
+      color: #1f2937;
+    }
+
+    .container {
+      width: min(900px, calc(100% - 32px));
+      margin: 40px auto;
+      background: #ffffff;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 34px;
+      color: #111827;
+    }
+
+    h2 {
+      margin-top: 32px;
+      font-size: 22px;
+      color: #111827;
+    }
+
+    p {
+      margin: 12px 0;
+    }
+
+    ul {
+      padding-left: 24px;
+    }
+
+    li {
+      margin: 8px 0;
+    }
+
+    .updated {
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 30px;
+    }
+
+    .notice {
+      padding: 16px 18px;
+      border-left: 4px solid #2563eb;
+      background: #eff6ff;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+
+    a {
+      color: #2563eb;
+    }
+
+    .back {
+      display: inline-block;
+      margin-bottom: 24px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #e5e7eb;
+      color: #6b7280;
+      font-size: 14px;
+    }
+
+    @media (max-width: 600px) {
+      .container {
+        padding: 24px;
+        margin: 20px auto;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <a class="back" href="index.html">← Back to PhishSite</a>
+
+    <h1>Privacy Policy</h1>
+
+    <p class="updated">Last updated: August 27, 2026</p>
+
+    <p>
+      PhishSite ("PhishSite", "we", "us", or "our") is a browser-based
+      email security tool designed to analyze email messages and identify
+      potentially suspicious or phishing content.
+    </p>
+
+    <p>
+      This Privacy Policy explains how PhishSite handles information when
+      you use the application, including when you connect a Google Gmail
+      account.
+    </p>
+
+    <h2>1. Information We Access</h2>
+
+    <p>
+      PhishSite can operate without connecting a Gmail account. If you
+      choose to connect Gmail, the application requests read-only access
+      to your Gmail mailbox through Google's Gmail API.
+    </p>
+
+    <p>The application may access:</p>
+
+    <ul>
+      <li>Your Google account email address for displaying the connected account.</li>
+      <li>Basic Gmail account/profile information provided through the Gmail API.</li>
+      <li>Inbox message metadata such as message IDs, subjects, senders, dates, and snippets.</li>
+      <li>Email headers and message content when required for security analysis.</li>
+      <li>Information necessary to analyze links, attachments, sender information, and authentication-related email headers.</li>
+    </ul>
+
+    <h2>2. How We Use Gmail Data</h2>
+
+    <p>
+      Gmail data is accessed only to provide the email security and
+      phishing-analysis features of PhishSite.
+    </p>
+
+    <p>This may include:</p>
+
+    <ul>
+      <li>Displaying messages from your Gmail inbox.</li>
+      <li>Analyzing email content for suspicious characteristics.</li>
+      <li>Inspecting sender and authentication information.</li>
+      <li>Analyzing links and attachment information contained in messages.</li>
+      <li>Displaying analysis results and scan history during your session.</li>
+    </ul>
+
+    <div class="notice">
+      PhishSite does not ask you to enter your Google password into the
+      application. Google handles authentication and authorization through
+      Google's authentication system.
+    </div>
+
+    <h2>3. Google Account Authorization</h2>
+
+    <p>
+      When you select "Continue with Google", Google handles the
+      authentication and authorization process.
+    </p>
+
+    <p>
+      PhishSite requests the Gmail read-only permission
+      (<code>gmail.readonly</code>). This permission allows the application
+      to read Gmail messages but does not give PhishSite permission to
+      modify, send, delete, or otherwise change your Gmail messages.
+    </p>
+
+    <p>
+      Google may display its own authorization and privacy information
+      during the sign-in process. Google's handling of your information is
+      governed by Google's applicable privacy policies.
+    </p>
+
+    <h2>4. Where Processing Occurs</h2>
+
+    <p>
+      PhishSite is designed as a browser-based application. Gmail messages
+      retrieved for analysis are processed by the application running in
+      your browser.
+    </p>
+
+    <p>
+      The current application does not require you to provide your Gmail
+      password to PhishSite.
+    </p>
+
+    <h2>5. Access Tokens</h2>
+
+    <p>
+      Google provides PhishSite with a temporary access token after you
+      authorize Gmail access.
+    </p>
+
+    <p>
+      The application uses this token to communicate with Google's Gmail
+      API during the connected session. The token is held in application
+      memory and is not intentionally stored in browser local storage or
+      session storage.
+    </p>
+
+    <p>
+      PhishSite also attempts to renew an expiring Gmail access token while
+      the connected session remains active.
+    </p>
+
+    <h2>6. Data Retention</h2>
+
+    <p>
+      PhishSite's current browser implementation keeps Gmail-related
+      session information in memory while the application is being used.
+    </p>
+
+    <p>
+      Scan history created during the session is maintained by the
+      application for displaying results and analytics during that
+      session.
+    </p>
+
+    <p>
+      PhishSite does not intentionally store Gmail messages or Gmail access
+      tokens in persistent browser storage.
+    </p>
+
+    <h2>7. Disconnecting Gmail</h2>
+
+    <p>
+      You can disconnect your Gmail account from PhishSite through the
+      application's Settings area.
+    </p>
+
+    <p>
+      When you disconnect Gmail, PhishSite revokes the current Gmail access
+      token and clears the application's active Gmail connection state.
+    </p>
+
+    <p>
+      The application also provides an option to remove Gmail-derived scan
+      information from the current session. Manually entered scan history
+      is not removed by that Gmail-specific cleanup.
+    </p>
+
+    <h2>8. Information You Enter Manually</h2>
+
+    <p>
+      PhishSite may allow you to manually enter email content for analysis.
+      Such information is processed to provide the requested security
+      analysis and may appear in the application's current-session scan
+      history.
+    </p>
+
+    <h2>9. Security</h2>
+
+    <p>
+      PhishSite uses security measures appropriate to its browser-based
+      architecture, including Google's OAuth authentication flow, read-only
+      Gmail permissions, access-token lifecycle handling, and a Content
+      Security Policy.
+    </p>
+
+    <p>
+      No method of transmitting or processing information over the Internet
+      can be guaranteed to be completely secure. Users should therefore
+      avoid submitting information that they do not want analyzed.
+    </p>
+
+    <h2>10. Third-Party Services</h2>
+
+    <p>
+      PhishSite uses Google services to authenticate users and access Gmail
+      through the Gmail API.
+    </p>
+
+    <p>
+      Google processes information according to Google's own policies and
+      terms. PhishSite does not control Google's independent processing of
+      information.
+    </p>
+
+    <h2>11. Children's Privacy</h2>
+
+    <p>
+      PhishSite is not specifically directed toward children. We do not
+      knowingly seek to collect personal information from children through
+      the application.
+    </p>
+
+    <h2>12. Changes to This Privacy Policy</h2>
+
+    <p>
+      This Privacy Policy may be updated when PhishSite's features,
+      data-handling practices, or legal requirements change.
+    </p>
+
+    <p>
+      The "Last updated" date at the top of this page indicates when this
+      policy was most recently revised.
+    </p>
+
+    <h2>13. Contact</h2>
+
+    <p>
+      If you have questions about this Privacy Policy or PhishSite's
+      handling of information, contact:
+    </p>
+
+    <p>
+      <strong>Email:</strong>
+      <a href="mailto:adinesh09092005@gmail.com">
+        adinesh09092005@gmail.com
+      </a>
+    </p>
+
+    <footer>
+      © 2026 PhishSite. All rights reserved.
+    </footer>
+  </main>
+</body>
+</html>
