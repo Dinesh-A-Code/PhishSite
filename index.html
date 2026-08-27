@@ -141,19 +141,7 @@
           <p class="inbox-disconnected-title">Connect your Gmail inbox</p>
           <p class="gmail-desc">PhishSite never sees your password — Google handles sign-in directly and only hands this page a temporary, read-only token.</p>
           <div class="gmail-setup-row">
-            <input type="text" id="in-client-id" placeholder="Paste your Google OAuth Client ID">
-            <button class="btn-primary" id="btn-gmail-connect">Connect Gmail</button>
-          </div>
-          <p class="gmail-hint">Needs a one-time, free OAuth Client ID from Google Cloud Console. <a href="#" id="gmail-setup-help">How do I get one?</a></p>
-          <div class="gmail-setup-details" id="gmail-setup-details" style="display:none;">
-            <ol>
-              <li>Open Google Cloud Console and create (or pick) a project.</li>
-              <li><b>APIs &amp; Services → Library</b> — search for and enable <code>Gmail API</code>.</li>
-              <li><b>APIs &amp; Services → OAuth consent screen</b> — choose External, add your own Gmail address as a test user, and add the scope <code>.../auth/gmail.readonly</code>.</li>
-              <li><b>APIs &amp; Services → Credentials → Create Credentials → OAuth client ID</b> — type <code>Web application</code>.</li>
-              <li>Under <b>Authorized JavaScript origins</b>, add the exact URL you're serving this page from (e.g. <code>http://localhost:8080</code>), then save.</li>
-              <li>Copy the Client ID and paste it above. This page must be served over http/https — sign-in won't work if you just double-click the file.</li>
-            </ol>
+            <button class="btn-primary" id="btn-gmail-connect">Continue with Google</button>
           </div>
         </div>
 

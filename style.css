@@ -171,13 +171,6 @@
   /* GMAIL CONNECT */
   .gmail-desc{font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 14px;max-width:620px;}
   .gmail-setup-row{display:flex;gap:10px;flex-wrap:wrap;}
-  .gmail-setup-row input{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--text);padding:10px 12px;font-size:13px;font-family:'IBM Plex Mono',monospace;}
-  .gmail-hint{font-size:12px;color:var(--muted);margin:10px 0 0;}
-  .gmail-hint a{color:var(--action);text-decoration:none;}
-  .gmail-setup-details{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 18px;}
-  .gmail-setup-details ol{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;}
-  .gmail-setup-details li{font-size:12.5px;color:var(--muted);line-height:1.6;}
-  .gmail-setup-details code{background:var(--panel-raised);padding:1px 5px;border-radius:4px;font-family:'IBM Plex Mono',monospace;color:var(--text);}
   .gmail-status{font-size:12px;margin:12px 0 0;min-height:16px;color:var(--action);}
   .gmail-status.err{color:var(--tag-error);}
   #gmail-account-label{font-size:12.5px;color:var(--text);}
@@ -416,7 +409,6 @@
   .inbox-disconnected-title{font-family:'Fraunces',serif;font-size:19px;font-weight:600;margin:0 0 8px;color:var(--text);}
   .inbox-disconnected .gmail-desc{margin:0 auto 18px;}
   .inbox-disconnected .gmail-setup-row{justify-content:center;}
-  .inbox-disconnected .gmail-hint{text-align:center;}
 
   /* connected state */
   .inbox-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px;}

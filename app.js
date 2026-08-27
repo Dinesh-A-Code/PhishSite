@@ -780,6 +780,12 @@ function runAnalysisPipeline(){
 document.getElementById('btn-analyze').addEventListener('click', runAnalysisPipeline);
 
 /* ---------- gmail integration ---------- */
+// Phase 2E-6: application-owned OAuth Client ID — this is a public web-client identifier
+// (not a secret; it is always visible in the OAuth request itself), safe to ship in frontend
+// code. Registered against this deployment's exact origin(s) in Google Cloud Console under
+// "Authorized JavaScript origins". Replace with this app's real Client ID before deploying.
+const GOOGLE_OAUTH_CLIENT_ID = "915333477690-0k0sk9gsmpps4k334ea0p6m03e1i5od5.apps.googleusercontent.com";
+
 let googleTokenClient = null;
 let gmailAccessToken = null;
 let fetchedMessages = [];
@@ -787,12 +793,6 @@ let fetchedMessages = [];
 // scope. gmailRefreshTimer schedules a silent (no-popup) token renewal before the current
 // access token expires, so a long-open tab doesn't just start failing with generic errors.
 let gmailRefreshTimer = null;
-
-document.getElementById('gmail-setup-help').addEventListener('click', (e)=>{
-  e.preventDefault();
-  const d = document.getElementById('gmail-setup-details');
-  d.style.display = d.style.display==='none' ? 'block' : 'none';
-});
 
 function gmailStatus(msg, isErr){
   const el = document.getElementById('gmail-status');
@@ -832,15 +832,13 @@ function handleGmailAuthError(){
 }
 
 document.getElementById('btn-gmail-connect').addEventListener('click', ()=>{
-  const clientId = document.getElementById('in-client-id').value.trim();
-  if(!clientId){ gmailStatus("Paste your OAuth Client ID first.", true); return; }
   if(!window.google || !google.accounts || !google.accounts.oauth2){
     gmailStatus("Google sign-in library is still loading — try again in a moment.", true);
     return;
   }
   gmailStatus("Opening Google sign-in…", false);
   googleTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: clientId,
+    client_id: GOOGLE_OAUTH_CLIENT_ID,
     scope: 'https://www.googleapis.com/auth/gmail.readonly',
     callback: (resp)=>{
       // Phase 2E-5: this callback now also fires for the silent background refresh triggered
@@ -1046,12 +1044,36 @@ function parseGmailMessage(msg){
   };
 }
 
+const GMAIL_MAX_INBOX_MESSAGES = 100; // hard cap on how many message ids fetchGmailMessages() will collect
+const GMAIL_LIST_PAGE_SIZE = 100; // Gmail's messages.list allows up to 500 per page; capped at our own total limit so a single page already covers the common case
+
+// Collects up to GMAIL_MAX_INBOX_MESSAGES newest INBOX message ids, following Gmail's
+// nextPageToken until either the cap is reached or Gmail reports no further page. Preserves
+// the newest-first order Gmail returns pages in, requests only as many ids as still needed
+// per page, and de-dupes defensively in case pagination ever returns an overlapping id.
+function fetchGmailInboxIds(pageToken, collected, seen){
+  collected = collected || [];
+  seen = seen || new Set();
+  const remaining = GMAIL_MAX_INBOX_MESSAGES - collected.length;
+  let url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&maxResults='+Math.min(GMAIL_LIST_PAGE_SIZE, remaining);
+  if(pageToken) url += '&pageToken='+encodeURIComponent(pageToken);
+  return gmailFetch(url).then(listResp=>{
+    (listResp.messages||[]).forEach(m=>{
+      if(!seen.has(m.id)){ seen.add(m.id); collected.push(m.id); }
+    });
+    gmailStatus('Fetching recent messages… ('+collected.length+' so far)', false);
+    if(collected.length>=GMAIL_MAX_INBOX_MESSAGES || !listResp.nextPageToken){
+      return collected.slice(0, GMAIL_MAX_INBOX_MESSAGES);
+    }
+    return fetchGmailInboxIds(listResp.nextPageToken, collected, seen);
+  });
+}
+
 function fetchGmailMessages(){
   gmailStatus('Fetching recent messages…', false);
   document.getElementById('gmail-messages').innerHTML = '<div class="gmail-loading"><span class="gmail-spinner"></span>Fetching messages…</div>';
-  gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=15&labelIds=INBOX')
-    .then(listResp=>{
-      const ids = (listResp.messages||[]).map(m=>m.id);
+  fetchGmailInboxIds()
+    .then(ids=>{
       if(ids.length===0){ gmailStatus('No messages found in inbox.', false); renderGmailMessages([]); return; }
       gmailStatus('Loading '+ids.length+' messages…', false);
       return Promise.all(ids.map(id=>gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+id+'?format=full')))
