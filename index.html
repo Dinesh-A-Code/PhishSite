@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Phase 2E-5: restricts where this static page can load scripts/styles/fonts from and
+     where it can send network requests, limiting what a content-injection bug could reach
+     (e.g. exfiltrating the in-memory Gmail access token) to the hosts this app actually uses. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; connect-src 'self' https://gmail.googleapis.com https://www.googleapis.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; base-uri 'self'; form-action 'self';">
+<title>PhishSite — Email Origin Classifier · Code Alchemists</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<input type="checkbox" id="mobile-nav-toggle" class="mobile-nav-toggle-input" hidden>
+<label for="mobile-nav-toggle" class="sidebar-overlay" aria-hidden="true"></label>
+
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark">CA</span>
+      <div class="brand-text">
+        <span class="brand-eyebrow">Code Alchemists</span>
+        <span class="brand-name">PhishSite</span>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <p class="nav-group-label">Overview</p>
+      <button class="nav-item active" data-view="dashboard"><span class="nav-icon">▦</span>Dashboard</button>
+
+      <p class="nav-group-label">Email Security</p>
+      <button class="nav-item" data-view="inbox"><span class="nav-icon">✉</span>Inbox</button>
+      <button class="nav-item" data-view="scan"><span class="nav-icon">✎</span>Scan Email</button>
+      <button class="nav-item" data-view="results" id="nav-results" disabled><span class="nav-icon">◈</span>Results</button>
+      <button class="nav-item" data-view="history"><span class="nav-icon">☷</span>History</button>
+
+      <p class="nav-group-label">Intelligence</p>
+      <button class="nav-item" data-view="analytics"><span class="nav-icon">📈</span>Analytics</button>
+      <button class="nav-item" data-view="lab"><span class="nav-icon">▤</span>Model Lab</button>
+
+      <p class="nav-group-label">System</p>
+      <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>Settings</button>
+      <button class="nav-item" data-view="help" disabled><span class="nav-icon">?</span>Help</button>
+      <button class="nav-item" data-view="logout" disabled><span class="nav-icon">⏻</span>Logout</button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <p>Explainable three-class classifier for phishing triage — legitimate, human-written, or AI-generated.</p>
+      <p class="legend-title mono">Classes</p>
+      <ul class="legend">
+        <li><i class="dot dot-legit"></i>Legitimate</li>
+        <li><i class="dot dot-human"></i>Human phishing</li>
+        <li><i class="dot dot-ai"></i>AI phishing</li>
+      </ul>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <header class="topbar">
+      <label for="mobile-nav-toggle" class="hamburger-btn" id="mobile-menu-btn" aria-label="Open menu">
+        <span></span><span></span><span></span>
+      </label>
+      <span class="topbar-title mono" id="topbar-title">Dashboard</span>
+    </header>
+
+    <div class="main-content">
+
+    <!-- DASHBOARD VIEW -->
+    <section class="view active" id="view-dashboard">
+      <div class="view-head">
+        <p class="eyebrow">Overview</p>
+        <h1>Dashboard</h1>
+        <p class="lede">Monitor email activity and identify phishing threats from this session's scans.</p>
+      </div>
+
+      <div class="dash-bento">
+        <div class="metric-card">
+          <p class="metric-label">Total emails analyzed</p>
+          <p class="metric-value" id="metric-total">0</p>
+        </div>
+        <div class="metric-card">
+          <p class="metric-label">Threats detected</p>
+          <p class="metric-value metric-danger" id="metric-threats">0</p>
+        </div>
+        <div class="metric-card">
+          <p class="metric-label">Legitimate emails</p>
+          <p class="metric-value metric-secondary" id="metric-legit">0</p>
+        </div>
+        <div class="metric-card">
+          <p class="metric-label">Human phishing</p>
+          <p class="metric-value metric-tertiary" id="metric-human">0</p>
+        </div>
+        <div class="metric-card">
+          <p class="metric-label">AI phishing</p>
+          <p class="metric-value metric-ai" id="metric-ai">0</p>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        <div class="panel dash-quick-action">
+          <p class="panel-title">Quick action</p>
+          <p class="dash-quick-desc">Run a new scan to classify an email as legitimate, human-written phishing, or AI-generated phishing.</p>
+          <button class="btn-primary" id="btn-dash-scan">Scan new email</button>
+        </div>
+
+        <div class="panel dash-security-overview">
+          <p class="panel-title">Security overview</p>
+          <div id="dash-security-body">
+            <p class="dash-empty-text">No scans yet this session — run a scan to see a legitimate vs. threat breakdown here.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel dash-activity">
+        <p class="panel-title">Recent analysis activity</p>
+        <div id="dash-activity-body">
+          <p class="dash-empty-text">No emails analyzed yet. Scanned emails from this session will show up here.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- INBOX VIEW -->
+    <section class="view" id="view-inbox">
+      <div class="view-head">
+        <p class="eyebrow">Email security</p>
+        <h1>Inbox</h1>
+        <p class="lede">Connect Gmail with Google's own sign-in to pull recent messages straight into the scanner and scan them for phishing.</p>
+      </div>
+
+      <div class="inbox-panel" id="gmail-panel">
+
+        <!-- DISCONNECTED STATE -->
+        <div id="gmail-disconnected" class="inbox-disconnected">
+          <div class="inbox-disconnected-icon">✉</div>
+          <p class="inbox-disconnected-title">Connect your Gmail inbox</p>
+          <p class="gmail-desc">PhishSite never sees your password — Google handles sign-in directly and only hands this page a temporary, read-only token.</p>
+          <div class="gmail-setup-row">
+            <input type="text" id="in-client-id" placeholder="Paste your Google OAuth Client ID">
+            <button class="btn-primary" id="btn-gmail-connect">Connect Gmail</button>
+          </div>
+          <p class="gmail-hint">Needs a one-time, free OAuth Client ID from Google Cloud Console. <a href="#" id="gmail-setup-help">How do I get one?</a></p>
+          <div class="gmail-setup-details" id="gmail-setup-details" style="display:none;">
+            <ol>
+              <li>Open Google Cloud Console and create (or pick) a project.</li>
+              <li><b>APIs &amp; Services → Library</b> — search for and enable <code>Gmail API</code>.</li>
+              <li><b>APIs &amp; Services → OAuth consent screen</b> — choose External, add your own Gmail address as a test user, and add the scope <code>.../auth/gmail.readonly</code>.</li>
+              <li><b>APIs &amp; Services → Credentials → Create Credentials → OAuth client ID</b> — type <code>Web application</code>.</li>
+              <li>Under <b>Authorized JavaScript origins</b>, add the exact URL you're serving this page from (e.g. <code>http://localhost:8080</code>), then save.</li>
+              <li>Copy the Client ID and paste it above. This page must be served over http/https — sign-in won't work if you just double-click the file.</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- CONNECTED STATE -->
+        <div id="gmail-connected" class="inbox-connected" style="display:none;">
+          <div class="inbox-toolbar">
+            <span id="gmail-account-label" class="mono"></span>
+            <div class="inbox-toolbar-actions">
+              <button class="btn-secondary" id="btn-gmail-refresh">Fetch recent emails</button>
+              <button class="btn-primary" id="btn-gmail-scanall">Scan all fetched</button>
+              <button class="btn-secondary" id="btn-gmail-disconnect">Disconnect</button>
+            </div>
+          </div>
+          <div id="gmail-messages" class="gmail-messages"></div>
+          <div id="gmail-batch-results" class="gmail-batch-results"></div>
+        </div>
+
+        <p class="gmail-status mono" id="gmail-status"></p>
+      </div>
+    </section>
+
+    <!-- SCAN VIEW -->
+    <section class="view" id="view-scan">
+      <div class="view-head">
+        <p class="eyebrow">Input</p>
+        <h1>Trace where this email really came from.</h1>
+        <p class="lede">Paste the subject, sender, and body below. PhishSite reads the language itself — tone, urgency, structure — to tell a legitimate message apart from human-written and AI-generated phishing, and shows its reasoning.</p>
+      </div>
+
+      <div class="steps">
+        <div class="step active"><span>1</span>Input</div>
+        <div class="step-line"></div>
+        <div class="step" id="step-analyze"><span>2</span>Analyze</div>
+        <div class="step-line"></div>
+        <div class="step" id="step-evidence"><span>3</span>Evidence</div>
+      </div>
+
+      <div class="panel scan-grid">
+        <p class="panel-title" style="grid-column:1/-1;">Manual entry</p>
+        <div class="field-col">
+          <label>Subject
+            <input id="in-subject" type="text" placeholder="e.g. Your account will be suspended">
+          </label>
+          <label>Sender
+            <input id="in-sender" type="text" placeholder="e.g. billing@company.com">
+          </label>
+          <label>URLs
+            <input id="in-urls" type="text" placeholder="Paste any links found in the email">
+          </label>
+          <label>Metadata
+            <input id="in-metadata" type="text" placeholder="SPF / DKIM / Reply-To (optional)">
+          </label>
+          <div class="samples">
+            <span class="samples-label">Try a sample:</span>
+            <button class="sample-btn" data-sample="legit">Legitimate</button>
+            <button class="sample-btn" data-sample="human">Human phishing</button>
+            <button class="sample-btn" data-sample="ai">AI phishing</button>
+          </div>
+        </div>
+
+        <div class="body-col">
+          <label style="flex:1;display:flex;flex-direction:column;">Email body
+            <textarea id="in-body" rows="12" placeholder="Paste the full email body here..." style="flex:1;"></textarea>
+          </label>
+          <div class="scan-actions">
+            <button class="btn-primary" id="btn-analyze">Analyze email</button>
+            <span class="scan-status mono" id="scan-status"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel hint-panel">
+        <p class="hint-title">What PhishSite looks for</p>
+        <p class="hint-sample">"Dear <mark class="tag-neutral">Valued Customer</mark>, your account will be <mark class="tag-human">suspended within 24 hours</mark>... <mark class="tag-ai">we understand the inconvenience this may cause</mark>... please <mark class="tag-error">verifiy</mark> now."</p>
+        <ul class="hint-legend">
+          <li><i class="dot dot-tag-neutral"></i>Generic greeting</li>
+          <li><i class="dot dot-human"></i>Urgency cue</li>
+          <li><i class="dot dot-ai"></i>AI-style phrasing</li>
+          <li><i class="dot dot-error"></i>Spelling irregularity</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- RESULTS VIEW -->
+    <section class="view" id="view-results">
+      <div class="view-head">
+        <p class="eyebrow">Evidence</p>
+      </div>
+
+      <div class="result-banner" id="result-banner">
+        <div>
+          <span class="severity-badge sev-trusted" id="severity-badge">—</span>
+          <span class="source-badge source-manual" id="source-badge"></span>
+          <p class="result-label" id="result-label">—</p>
+          <p class="result-sub" id="result-sub">Run a scan to see a classification here.</p>
+        </div>
+        <div class="confidence-wrap">
+          <p class="confidence-num" id="confidence-num">—</p>
+          <div class="confidence-bar"><div class="confidence-fill" id="confidence-fill"></div></div>
+          <p class="confidence-caption">confidence</p>
+        </div>
+      </div>
+
+      <div class="panel result-summary-panel" id="result-summary-panel">
+        <div class="summary-stat"><p class="summary-stat-label">Threat level</p><p class="summary-stat-value" id="summary-threat">—</p></div>
+        <div class="summary-stat"><p class="summary-stat-label">Classification</p><p class="summary-stat-value" id="summary-classification">—</p></div>
+        <div class="summary-stat"><p class="summary-stat-label">Confidence</p><p class="summary-stat-value" id="summary-confidence">—</p></div>
+        <div class="summary-stat"><p class="summary-stat-label">Signals found</p><p class="summary-stat-value" id="summary-signal-count">—</p></div>
+        <div class="summary-stat"><p class="summary-stat-label">URLs detected</p><p class="summary-stat-value" id="summary-url-count">—</p></div>
+        <div class="summary-stat summary-stat-wide"><p class="summary-stat-label">Sender</p><p class="summary-stat-value mono" id="summary-sender">—</p></div>
+        <div class="summary-stat summary-stat-wide"><p class="summary-stat-label">Received</p><p class="summary-stat-value mono" id="summary-received">—</p></div>
+      </div>
+
+      <div class="panel why-panel" id="why-panel">
+        <p class="panel-title">Why this result?</p>
+        <p class="confidence-explain" id="confidence-explain">Run a scan to see an explanation here.</p>
+        <div class="why-groups">
+          <div class="why-group why-group-trust">
+            <p class="why-group-title">Trust indicators</p>
+            <ul class="why-list" id="why-trust-list"></ul>
+          </div>
+          <div class="why-group why-group-risk">
+            <p class="why-group-title">Risk indicators</p>
+            <ul class="why-list" id="why-risk-list"></ul>
+          </div>
+          <div class="why-group why-group-attention">
+            <p class="why-group-title">Attention indicators</p>
+            <ul class="why-list" id="why-attention-list"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel auth-panel" id="auth-panel">
+        <p class="panel-title">Email authentication</p>
+        <p class="auth-unavailable" id="auth-unavailable">Authentication headers aren't available for manually entered email — connect Gmail and scan a real message to see SPF/DKIM/DMARC results here.</p>
+        <div class="auth-grid" id="auth-grid" style="display:none;">
+          <div class="auth-stat"><p class="summary-stat-label">SPF</p><span class="auth-status-badge" id="auth-spf">—</span></div>
+          <div class="auth-stat"><p class="summary-stat-label">DKIM</p><span class="auth-status-badge" id="auth-dkim">—</span></div>
+          <div class="auth-stat"><p class="summary-stat-label">DMARC</p><span class="auth-status-badge" id="auth-dmarc">—</span></div>
+          <div class="auth-stat"><p class="summary-stat-label">Sender alignment</p><span class="auth-status-badge" id="auth-alignment">—</span></div>
+        </div>
+        <ul class="auth-evidence-list" id="auth-evidence-list"></ul>
+      </div>
+
+      <div class="panel attachment-panel" id="attachment-panel">
+        <p class="panel-title">Attachment analysis</p>
+        <p class="auth-unavailable" id="attachment-unavailable">Attachment data isn't available for manually entered email — connect Gmail and scan a real message to see attachment risk here.</p>
+        <p class="auth-unavailable" id="attachment-none" style="display:none;">No attachments were found on this message.</p>
+        <table class="attachment-table" id="attachment-table" style="display:none;">
+          <thead><tr><th>Filename</th><th>Type</th><th>Risk</th><th>Reason</th></tr></thead>
+          <tbody id="attachment-table-body"></tbody>
+        </table>
+      </div>
+
+      <div class="results-grid">
+        <div class="panel annotated-panel" id="annotated-panel">
+          <p class="panel-title">Annotated email</p>
+          <div class="annotated-legend">
+            <span class="legend-item"><span class="legend-swatch sw-security"></span>Security / trusted wording</span>
+            <span class="legend-item"><span class="legend-swatch sw-human"></span>Urgency / warning wording</span>
+            <span class="legend-item"><span class="legend-swatch sw-ai"></span>AI-style hedging phrasing</span>
+            <span class="legend-item"><span class="legend-swatch sw-neutral"></span>Generic greeting</span>
+            <span class="legend-item"><span class="legend-swatch sw-error"></span>Spelling / grammar irregularity</span>
+          </div>
+          <div class="annotated-meta" id="annotated-meta"></div>
+          <div class="annotated-body" id="annotated-body">Run a scan first.</div>
+        </div>
+
+        <div class="side-col">
+          <div class="panel">
+            <p class="panel-title">Top signals</p>
+            <ul class="signals" id="signals-list"></ul>
+          </div>
+          <div class="panel risk-panel" id="risk-panel">
+            <p class="panel-title">Risk summary</p>
+            <p id="risk-text">—</p>
+            <p class="recommend" id="recommend-text"></p>
+          </div>
+          <div class="panel action-panel" id="action-panel">
+            <p class="panel-title">What should you do?</p>
+            <ul class="action-list" id="action-list"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="heuristic-disclaimer">
+        <span class="disclaimer-icon">ℹ</span>
+        <span>PhishSite uses heuristic analysis based on email content, sender information, and links. It helps identify suspicious patterns but does not guarantee that an email is safe or malicious — always use your own judgment for anything sensitive.</span>
+      </div>
+
+      <div class="results-actions">
+        <button class="btn-secondary" id="btn-rescan">Analyze another email</button>
+        <button class="btn-secondary" id="btn-export">Export report</button>
+      </div>
+    </section>
+
+    <!-- HISTORY VIEW -->
+    <section class="view" id="view-history">
+      <div class="view-head">
+        <p class="eyebrow">Email security</p>
+        <h1>Analysis history</h1>
+        <p class="lede">Review email analyses from this session and reopen any result.</p>
+      </div>
+
+      <div class="history-toolbar">
+        <input type="text" id="history-search" class="history-search-input" placeholder="Search by subject or sender...">
+        <select id="history-filter" class="history-filter-select">
+          <option value="all">All classifications</option>
+          <option value="legit">Legitimate</option>
+          <option value="human">Human phishing</option>
+          <option value="ai">AI phishing</option>
+        </select>
+      </div>
+
+      <div class="panel history-panel" id="history-body"></div>
+    </section>
+
+    <!-- ANALYTICS VIEW -->
+    <section class="view" id="view-analytics">
+      <div class="view-head">
+        <p class="eyebrow">Intelligence</p>
+        <h1>Security analytics</h1>
+        <p class="lede">Classification patterns and threat trends from this session's scans.</p>
+      </div>
+
+      <div id="analytics-body"></div>
+    </section>
+
+    <!-- LAB VIEW -->
+    <section class="view" id="view-lab">
+      <div class="view-head">
+        <p class="eyebrow">Model lab</p>
+        <div class="view-head-title-row">
+          <h1>Model evaluation dashboard</h1>
+          <span class="badge-demo">Demo data</span>
+        </div>
+        <p class="lede">Sample results shown for illustration — no trained model is connected yet. Point PhishSite at a trained checkpoint to populate this view with live metrics.</p>
+      </div>
+
+      <div class="lab-toggle">
+        <button class="toggle-btn active" data-model="tfidf">TF-IDF + XGBoost</button>
+        <button class="toggle-btn" data-model="distilbert">DistilBERT-inspired</button>
+      </div>
+
+      <div class="panel lab-overview">
+        <div class="lab-overview-row">
+          <div>
+            <p class="lab-overview-name" id="lab-overview-name">TF-IDF + XGBoost</p>
+            <p class="gmail-desc" id="lab-overview-note">Lightweight baseline, fast to retrain</p>
+          </div>
+          <span class="badge-demo">Demo data</span>
+        </div>
+      </div>
+
+      <div class="kpi-row" id="kpi-row"></div>
+
+      <div class="lab-grid">
+        <div class="panel">
+          <p class="panel-title">Model comparison <span class="badge-demo badge-demo-sm">Demo</span></p>
+          <table class="cmp-table" id="cmp-table">
+            <thead><tr><th>Model</th><th>Accuracy</th><th>F1-score</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr data-model="tfidf"><td>TF-IDF + XGBoost</td><td>91.4%</td><td>89.8%</td><td>Lightweight baseline, fast to retrain</td></tr>
+              <tr data-model="distilbert"><td>DistilBERT-inspired</td><td>94.7%</td><td>93.9%</td><td>Higher accuracy, heavier inference cost</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <p class="panel-title">Class distribution (training set) <span class="badge-demo badge-demo-sm">Demo</span></p>
+          <div class="dist-chart" id="dist-chart"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">Confusion matrix <span class="badge-demo badge-demo-sm">Demo</span></p>
+        <div class="confusion" id="confusion-matrix"></div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">Adversarial examples &amp; failure cases</p>
+        <ul class="fail-list">
+          <li><strong>Polished, legitimate-like phishing</strong> — fluent AI phishing with a convincing footer is occasionally scored as Legitimate; mitigated by weighting URL and sender signals more heavily.</li>
+          <li><strong>Tone-mismatched email</strong> — a human-written phishing email rewritten in a formal register drifts toward the AI-phishing class; flagged for adversarial retraining.</li>
+          <li><strong>Short transactional emails</strong> — very short legitimate emails sometimes lack enough signal for a confident prediction.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- SETTINGS VIEW -->
+    <section class="view" id="view-settings">
+      <div class="view-head">
+        <p class="eyebrow">System</p>
+        <h1>Settings</h1>
+        <p class="lede">Manage your Gmail connection and this session's data.</p>
+      </div>
+
+      <div id="settings-body"></div>
+    </section>
+
+    </div>
+  </main>
+</div>
+
+
+<script src="app.js"></script>
+</body>
+</html>
