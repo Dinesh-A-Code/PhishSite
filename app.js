@@ -1047,6 +1047,66 @@ function parseGmailMessage(msg){
 const GMAIL_MAX_INBOX_MESSAGES = 100; // hard cap on how many message ids fetchGmailMessages() will collect
 const GMAIL_LIST_PAGE_SIZE = 100; // Gmail's messages.list allows up to 500 per page; capped at our own total limit so a single page already covers the common case
 
+// Phase 2E-7: shared Gmail fetch infrastructure. GMAIL_FETCH_CONCURRENCY bounds how many
+// per-message requests (metadata listing, full-content loading) are ever in flight at once —
+// this is what actually fixes "Too many concurrent requests for user.", which a single
+// Promise.all() over up to 100 ids would otherwise trigger.
+const GMAIL_FETCH_CONCURRENCY = 10;
+const GMAIL_RETRY_MAX_ATTEMPTS = 4; // 1 initial attempt + up to 3 retries
+const GMAIL_RETRY_BASE_DELAY_MS = 500; // doubles each retry: 500ms, 1000ms, 2000ms
+
+function delay(ms){ return new Promise(resolve=>setTimeout(resolve, ms)); }
+
+// 401/403 are authentication failures, not transient — those must never be retried here and
+// instead flow straight through to the existing isAuthError handling at each call site
+// (which routes them to handleGmailAuthError(), unchanged). 429 (rate limited) and 5xx are
+// the transient cases worth a bounded retry; anything else (400, 404, ...) is not.
+function isRetryableGmailError(err){
+  if(err.isAuthError) return false;
+  return err.status===429 || (err.status>=500 && err.status<600);
+}
+
+// Truncated-exponential-backoff wrapper around the existing gmailFetch() — does not replace
+// or duplicate its request/response/auth-tagging logic, only adds bounded retries around it
+// for temporary failures (e.g. HTTP 429 under load). Gives up after GMAIL_RETRY_MAX_ATTEMPTS
+// so a permanently failing request can't retry forever.
+function gmailFetchWithRetry(url, attempt){
+  attempt = attempt || 1;
+  return gmailFetch(url).catch(err=>{
+    if(attempt>=GMAIL_RETRY_MAX_ATTEMPTS || !isRetryableGmailError(err)) throw err;
+    const backoffMs = GMAIL_RETRY_BASE_DELAY_MS * Math.pow(2, attempt-1);
+    return delay(backoffMs).then(()=>gmailFetchWithRetry(url, attempt+1));
+  });
+}
+
+// Reusable bounded-concurrency runner: processes `items` through `worker` with at most
+// `limit` in flight at once, never more — this is the one place concurrency control lives,
+// used by both the inbox metadata listing and the full-content scan-all loading below rather
+// than duplicating a request pool in each. A single item's failure (after any retries the
+// worker itself performs) never aborts the others: every outcome resolves as either
+// {ok:true, value} or {ok:false, error}, in the same order as `items`.
+function runWithConcurrencyLimit(items, limit, worker){
+  return new Promise(resolve=>{
+    const outcomes = new Array(items.length);
+    if(items.length===0){ resolve(outcomes); return; }
+    let nextIndex = 0;
+    let settledCount = 0;
+    function startNext(){
+      if(nextIndex>=items.length) return;
+      const i = nextIndex++;
+      Promise.resolve().then(()=>worker(items[i], i))
+        .then(value=>{ outcomes[i] = {ok:true, value}; })
+        .catch(error=>{ outcomes[i] = {ok:false, error}; })
+        .then(()=>{
+          settledCount++;
+          if(settledCount===items.length) resolve(outcomes);
+          else startNext();
+        });
+    }
+    for(let k=0; k<Math.min(limit, items.length); k++) startNext();
+  });
+}
+
 // Collects up to GMAIL_MAX_INBOX_MESSAGES newest INBOX message ids, following Gmail's
 // nextPageToken until either the cap is reached or Gmail reports no further page. Preserves
 // the newest-first order Gmail returns pages in, requests only as many ids as still needed
@@ -1057,7 +1117,7 @@ function fetchGmailInboxIds(pageToken, collected, seen){
   const remaining = GMAIL_MAX_INBOX_MESSAGES - collected.length;
   let url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&maxResults='+Math.min(GMAIL_LIST_PAGE_SIZE, remaining);
   if(pageToken) url += '&pageToken='+encodeURIComponent(pageToken);
-  return gmailFetch(url).then(listResp=>{
+  return gmailFetchWithRetry(url).then(listResp=>{
     (listResp.messages||[]).forEach(m=>{
       if(!seen.has(m.id)){ seen.add(m.id); collected.push(m.id); }
     });
@@ -1069,19 +1129,57 @@ function fetchGmailInboxIds(pageToken, collected, seen){
   });
 }
 
+// Lightweight counterpart to parseGmailMessage(), used only for the inbox list. Reads just
+// the headers a format=metadata response includes (Subject/From/Date) plus the always-present
+// snippet — no payload/body is requested, so there is nothing here to run auth/attachment
+// analysis on yet. scanGmailMessage() fetches the full message on demand for that.
+function parseGmailMessageMetadata(msg){
+  const headers = (msg.payload && msg.payload.headers) || [];
+  const getHeader = name => { const h = headers.find(h=>h.name.toLowerCase()===name.toLowerCase()); return h?h.value:''; };
+  return {
+    id: msg.id,
+    subject: getHeader('Subject'),
+    sender: getHeader('From'),
+    date: getHeader('Date'),
+    snippet: msg.snippet || ''
+  };
+}
+
+// Fetches just enough per-message data to populate the inbox list (Subject/From/Date +
+// snippet) via format=metadata — never format=full, so listing 100 messages never downloads
+// 100 full bodies. Runs through the same bounded-concurrency + retry helpers as the
+// full-content loading below, since even lightweight metadata requests hit Gmail's
+// per-user concurrent-request limit if fired all at once.
+function fetchGmailMessageMetadata(ids){
+  let done = 0;
+  return runWithConcurrencyLimit(ids, GMAIL_FETCH_CONCURRENCY, (id)=>{
+    const url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/'+id
+      +'?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date';
+    return gmailFetchWithRetry(url).then(msg=>{
+      done++;
+      gmailStatus('Loaded '+done+' of '+ids.length+' messages…', false);
+      return parseGmailMessageMetadata(msg);
+    });
+  }).then(outcomes=>{
+    const authFailure = outcomes.find(o=>!o.ok && o.error && o.error.isAuthError);
+    if(authFailure){ handleGmailAuthError(); return; }
+    fetchedMessages = outcomes.filter(o=>o.ok).map(o=>o.value);
+    const failedCount = outcomes.length - fetchedMessages.length;
+    renderGmailMessages(fetchedMessages);
+    gmailStatus(
+      'Loaded '+fetchedMessages.length+' messages'+(failedCount ? ' ('+failedCount+' failed to load)' : '')+'. Click one to scan it, or scan them all at once.',
+      false
+    );
+  });
+}
+
 function fetchGmailMessages(){
-  gmailStatus('Fetching recent messages…', false);
+  gmailStatus('Fetching messages…', false);
   document.getElementById('gmail-messages').innerHTML = '<div class="gmail-loading"><span class="gmail-spinner"></span>Fetching messages…</div>';
   fetchGmailInboxIds()
     .then(ids=>{
       if(ids.length===0){ gmailStatus('No messages found in inbox.', false); renderGmailMessages([]); return; }
-      gmailStatus('Loading '+ids.length+' messages…', false);
-      return Promise.all(ids.map(id=>gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+id+'?format=full')))
-        .then(msgs=>{
-          fetchedMessages = msgs.map(parseGmailMessage);
-          renderGmailMessages(fetchedMessages);
-          gmailStatus('Loaded '+fetchedMessages.length+' messages. Click one to scan it, or scan them all at once.', false);
-        });
+      return fetchGmailMessageMetadata(ids);
     })
     .catch(e=>{
       if(e.isAuthError){ handleGmailAuthError(); return; }
@@ -1126,7 +1224,16 @@ function fillFormFromMessage(m){
   document.getElementById('in-body').value = m.body || m.snippet || '';
 }
 
-function scanGmailMessage(m){
+// A fetchedMessages entry starts out metadata-only (see parseGmailMessageMetadata); once its
+// full content has been loaded — by an individual scan or by "Scan all fetched" — it also has
+// an `auth` field (analyzeAuthHeaders() always returns an object, never undefined). Checking
+// for that is how both scanGmailMessage() and loadFullGmailMessages() below avoid re-fetching
+// a message that was already loaded.
+function isGmailMessageFullyLoaded(m){
+  return m.auth !== undefined;
+}
+
+function runGmailMessageAnalysis(m){
   fillFormFromMessage(m);
   pendingGmailMsgId = m.id;
   pendingGmailAuth = m.auth || null;
@@ -1134,20 +1241,66 @@ function scanGmailMessage(m){
   runAnalysisPipeline();
 }
 
+// Fetches this one message's full content on demand — the inbox list only ever holds
+// lightweight metadata, so scanning is what actually requests format=full, and only for the
+// message being scanned. Caches the parsed result onto the same object already sitting in
+// fetchedMessages, so re-scanning it (or a later "Scan all") never fetches it twice.
+function scanGmailMessage(m){
+  if(isGmailMessageFullyLoaded(m)){ runGmailMessageAnalysis(m); return; }
+  gmailStatus('Fetching message…', false);
+  gmailFetchWithRetry('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=full')
+    .then(fullMsg=>{
+      Object.assign(m, parseGmailMessage(fullMsg));
+      gmailStatus('', false);
+      runGmailMessageAnalysis(m);
+    })
+    .catch(e=>{
+      if(e.isAuthError){ handleGmailAuthError(); return; }
+      gmailStatus('Could not load this message: '+e.message, true);
+    });
+}
+
+// Loads full content (format=full) for every not-yet-loaded message in `messages`, bounded to
+// GMAIL_FETCH_CONCURRENCY in flight at once — this is what "Scan all fetched" uses instead of
+// the old unbounded Promise.all() over up to 100 ids. A message that still fails after
+// gmailFetchWithRetry's own retries is simply left metadata-only: analyzeEmail() below already
+// falls back to the snippet and null auth/attachment info for those, so one bad message never
+// blocks the rest of the batch. Resolves to true if the caller should proceed, false if an
+// auth error was hit (already handled via handleGmailAuthError()).
+function loadFullGmailMessages(messages){
+  const toLoad = messages.filter(m => !isGmailMessageFullyLoaded(m));
+  if(toLoad.length===0) return Promise.resolve(true);
+  const total = toLoad.length;
+  let done = 0;
+  gmailStatus('Scanning 0 of '+total+'…', false);
+  return runWithConcurrencyLimit(toLoad, GMAIL_FETCH_CONCURRENCY, (m)=>{
+    return gmailFetchWithRetry('https://gmail.googleapis.com/gmail/v1/users/me/messages/'+m.id+'?format=full')
+      .then(fullMsg=>{ Object.assign(m, parseGmailMessage(fullMsg)); })
+      .finally(()=>{ done++; gmailStatus('Scanning '+done+' of '+total+'…', false); });
+  }).then(outcomes=>{
+    const authFailure = outcomes.find(o=>!o.ok && o.error && o.error.isAuthError);
+    if(authFailure){ handleGmailAuthError(); return false; }
+    return true;
+  });
+}
+
 document.getElementById('btn-gmail-scanall').addEventListener('click', ()=>{
   if(fetchedMessages.length===0){ gmailStatus('Fetch messages first.', true); return; }
-  const results = fetchedMessages.map(m=>{
-    const result = analyzeEmail({subject:m.subject, sender:m.sender, urls:m.urls, metadata:m.date, body:m.body||m.snippet});
-    result.authInfo = m.auth || null;
-    result.attachmentInfo = m.attachmentInfo || null;
-    result.msgId = m.id;
-    result.source = 'gmail';
-    return {msg:m, result};
+  loadFullGmailMessages(fetchedMessages).then(shouldProceed=>{
+    if(!shouldProceed) return; // auth error already surfaced by loadFullGmailMessages
+    const results = fetchedMessages.map(m=>{
+      const result = analyzeEmail({subject:m.subject, sender:m.sender, urls:m.urls, metadata:m.date, body:m.body||m.snippet});
+      result.authInfo = m.auth || null;
+      result.attachmentInfo = m.attachmentInfo || null;
+      result.msgId = m.id;
+      result.source = 'gmail';
+      return {msg:m, result};
+    });
+    results.forEach(r=>{
+      if(!findScanByMsgId(r.msg.id)) recordScan(r.result, r.msg.id, r.msg.auth, r.msg.attachmentInfo);
+    });
+    renderBatchResults(results);
   });
-  results.forEach(r=>{
-    if(!findScanByMsgId(r.msg.id)) recordScan(r.result, r.msg.id, r.msg.auth, r.msg.attachmentInfo);
-  });
-  renderBatchResults(results);
 });
 
 function renderBatchResults(results){
