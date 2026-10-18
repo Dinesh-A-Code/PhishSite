@@ -1075,7 +1075,7 @@ function parseGmailMessage(msg){
   };
 }
 
-const GMAIL_MAX_INBOX_MESSAGES = 100; // hard cap on how many message ids fetchGmailMessages() will collect
+const GMAIL_MAX_INBOX_MESSAGES = 100; // hard cap on how many message ids fetchGmailMessages() will collect; also the max of the "Emails to fetch" field
 const GMAIL_LIST_PAGE_SIZE = 100; // Gmail's messages.list allows up to 500 per page; capped at our own total limit so a single page already covers the common case
 
 // Phase 2E-7: shared Gmail fetch infrastructure. GMAIL_FETCH_CONCURRENCY bounds how many
@@ -1138,14 +1138,15 @@ function runWithConcurrencyLimit(items, limit, worker){
   });
 }
 
-// Collects up to GMAIL_MAX_INBOX_MESSAGES newest INBOX message ids, following Gmail's
-// nextPageToken until either the cap is reached or Gmail reports no further page. Preserves
-// the newest-first order Gmail returns pages in, requests only as many ids as still needed
-// per page, and de-dupes defensively in case pagination ever returns an overlapping id.
-function fetchGmailInboxIds(pageToken, collected, seen){
+// Collects up to `limit` (never more than GMAIL_MAX_INBOX_MESSAGES) newest INBOX message ids,
+// following Gmail's nextPageToken until either the limit is reached or Gmail reports no further
+// page. Preserves the newest-first order Gmail returns pages in, requests only as many ids as
+// still needed per page, and de-dupes defensively in case pagination ever returns an overlapping id.
+function fetchGmailInboxIds(limit, pageToken, collected, seen){
+  limit = Math.min(limit || GMAIL_MAX_INBOX_MESSAGES, GMAIL_MAX_INBOX_MESSAGES);
   collected = collected || [];
   seen = seen || new Set();
-  const remaining = GMAIL_MAX_INBOX_MESSAGES - collected.length;
+  const remaining = limit - collected.length;
   let url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&maxResults='+Math.min(GMAIL_LIST_PAGE_SIZE, remaining);
   if(pageToken) url += '&pageToken='+encodeURIComponent(pageToken);
   return gmailFetchWithRetry(url).then(listResp=>{
@@ -1153,10 +1154,10 @@ function fetchGmailInboxIds(pageToken, collected, seen){
       if(!seen.has(m.id)){ seen.add(m.id); collected.push(m.id); }
     });
     gmailStatus('Fetching recent messages… ('+collected.length+' so far)', false);
-    if(collected.length>=GMAIL_MAX_INBOX_MESSAGES || !listResp.nextPageToken){
-      return collected.slice(0, GMAIL_MAX_INBOX_MESSAGES);
+    if(collected.length>=limit || !listResp.nextPageToken){
+      return collected.slice(0, limit);
     }
-    return fetchGmailInboxIds(listResp.nextPageToken, collected, seen);
+    return fetchGmailInboxIds(limit, listResp.nextPageToken, collected, seen);
   });
 }
 
@@ -1204,10 +1205,54 @@ function fetchGmailMessageMetadata(ids){
   });
 }
 
+// "Emails to fetch" field: digits only, 1..GMAIL_MAX_INBOX_MESSAGES. A value above the max is
+// snapped back to the max as you type; an empty/zero value disables the Fetch button.
+const fetchCountInput = document.getElementById('gmail-fetch-count');
+const fetchCountHint = document.getElementById('gmail-fetch-count-hint');
+const fetchBtn = document.getElementById('btn-gmail-refresh');
+fetchCountInput.max = GMAIL_MAX_INBOX_MESSAGES;
+fetchCountInput.value = GMAIL_MAX_INBOX_MESSAGES;
+
+function setFetchCountHint(text, isErr){
+  fetchCountHint.textContent = text;
+  fetchCountHint.classList.toggle('err', !!isErr);
+}
+
+// Returns the validated count, or null (with the hint showing why) if it's not usable.
+function readFetchCount(){
+  const raw = fetchCountInput.value.trim();
+  const n = Number(raw);
+  if(raw==='' || !Number.isInteger(n) || n<1){
+    setFetchCountHint('Enter a number from 1 to '+GMAIL_MAX_INBOX_MESSAGES, true);
+    fetchBtn.disabled = true;
+    return null;
+  }
+  fetchBtn.disabled = false;
+  return Math.min(n, GMAIL_MAX_INBOX_MESSAGES);
+}
+
+fetchCountInput.addEventListener('keydown', e=>{
+  if(['e','E','+','-','.',','].includes(e.key)) e.preventDefault();
+  if(e.key==='Enter' && !fetchBtn.disabled) fetchGmailMessages();
+});
+fetchCountInput.addEventListener('input', ()=>{
+  const n = Number(fetchCountInput.value);
+  if(n > GMAIL_MAX_INBOX_MESSAGES){
+    fetchCountInput.value = GMAIL_MAX_INBOX_MESSAGES;
+    setFetchCountHint('Maximum is '+GMAIL_MAX_INBOX_MESSAGES, true);
+    fetchBtn.disabled = false;
+    return;
+  }
+  if(readFetchCount()!==null) setFetchCountHint('Max '+GMAIL_MAX_INBOX_MESSAGES, false);
+});
+setFetchCountHint('Max '+GMAIL_MAX_INBOX_MESSAGES, false);
+
 function fetchGmailMessages(){
+  const limit = readFetchCount();
+  if(limit===null) return;
   gmailStatus('Fetching messages…', false);
   document.getElementById('gmail-messages').innerHTML = '<div class="gmail-loading"><span class="gmail-spinner"></span>Fetching messages…</div>';
-  fetchGmailInboxIds()
+  fetchGmailInboxIds(limit)
     .then(ids=>{
       if(ids.length===0){ gmailStatus('No messages found in inbox.', false); renderGmailMessages([]); return; }
       return fetchGmailMessageMetadata(ids);
@@ -1372,7 +1417,7 @@ function renderBatchResults(results){
   });
 }
 
-document.getElementById('btn-gmail-refresh').addEventListener('click', fetchGmailMessages);
+fetchBtn.addEventListener('click', ()=>fetchGmailMessages());
 
 // Phase 2E-5: removes only the Gmail-sourced scan data (entries with a msgId, plus lastResult
 // if it came from a Gmail scan) — manually entered/scanned history is left untouched. Called

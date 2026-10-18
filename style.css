@@ -547,7 +547,25 @@
 
   /* connected state */
   .inbox-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;}
-  .inbox-toolbar-actions{display:flex;gap:10px;flex-wrap:wrap;}
+  .inbox-toolbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+
+  /* "Emails to fetch" number field */
+  .fetch-count{
+    display:flex;align-items:center;gap:8px;
+    background:var(--surface-inset);box-shadow:var(--shadow-inset);border-radius:999px;padding:5px 14px 5px 16px;
+  }
+  .fetch-count-label{margin:0;flex-direction:row;font-size:12.5px;font-weight:500;color:var(--muted);white-space:nowrap;}
+  .fetch-count input[type=number]{
+    width:64px;padding:6px 8px;border:none;border-radius:999px;text-align:center;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:var(--text);
+    background:var(--card-face);box-shadow:var(--shadow-soft);
+    -moz-appearance:textfield;appearance:textfield;
+  }
+  .fetch-count input[type=number]::-webkit-outer-spin-button,
+  .fetch-count input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  .fetch-count input[type=number]:focus{outline:none;box-shadow:var(--shadow-soft),0 0 0 2px rgba(208,132,79,.45);}
+  .fetch-count-hint{font-size:11px;color:var(--faint);white-space:nowrap;}
+  .fetch-count-hint.err{color:var(--risk-ink);font-weight:600;}
 
   /* richer message rows */
   .gmail-msg-top-line{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
@@ -713,8 +731,9 @@
     .confusion{overflow-x:auto;max-width:100%;}
     .inbox-panel{padding:20px 16px;}
     .inbox-toolbar{flex-direction:column;align-items:stretch;}
-    .inbox-toolbar-actions{flex-direction:column;}
+    .inbox-toolbar-actions{flex-direction:column;align-items:stretch;}
     .inbox-toolbar-actions button{width:100%;}
+    .fetch-count{border-radius:16px;justify-content:space-between;flex-wrap:wrap;}
     .gmail-msg-row{flex-direction:column;align-items:stretch;}
     .gmail-msg-side{flex-direction:row;align-items:center;justify-content:space-between;}
     .gmail-batch-results{overflow-x:auto;}
