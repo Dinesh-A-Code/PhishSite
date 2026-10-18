@@ -50,6 +50,7 @@ function showView(name){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===name));
   const titleEl = document.querySelector('.topbar-title');
   if(titleEl && VIEW_TITLES[name]) titleEl.textContent = VIEW_TITLES[name];
+  window.scrollTo({top:0});
 }
 document.querySelectorAll('.nav-item').forEach(btn=>{
   btn.addEventListener('click',()=>{
@@ -775,6 +776,7 @@ function runAnalysisPipeline(){
       lastResult.msgId = msgIdForThisRun || null;
       lastResult.source = msgIdForThisRun ? 'gmail' : 'manual';
       recordScan(lastResult, msgIdForThisRun, authForThisRun, attachmentsForThisRun);
+      if(msgIdForThisRun) gmailStatus('', false);
       renderResults(lastResult);
       document.getElementById('nav-results').disabled = false;
       btn.disabled = false;
@@ -833,7 +835,7 @@ function handleGmailAuthError(err){
   document.getElementById('gmail-connected').style.display='none';
   document.getElementById('gmail-disconnected').style.display='block';
   document.getElementById('gmail-messages').innerHTML='';
-  document.getElementById('gmail-batch-results').innerHTML='';
+  clearBatchResults();
   if(err && err.isPermissionError){
     gmailStatus("Google didn't grant permission to read your messages — click Continue with Google and make sure the Gmail access box is ticked on the consent screen.", true);
   } else {
@@ -1310,6 +1312,8 @@ function isGmailMessageFullyLoaded(m){
 }
 
 function runGmailMessageAnalysis(m){
+  // runAnalysisPipeline reports progress on the Scan view, which isn't visible from Inbox.
+  gmailStatus('Analyzing "'+(m.subject||'(no subject)')+'"… opening Results shortly.', false);
   fillFormFromMessage(m);
   pendingGmailMsgId = m.id;
   pendingGmailAuth = m.auth || null;
@@ -1365,9 +1369,11 @@ function loadFullGmailMessages(messages){
   });
 }
 
-document.getElementById('btn-gmail-scanall').addEventListener('click', ()=>{
+const scanAllBtn = document.getElementById('btn-gmail-scanall');
+scanAllBtn.addEventListener('click', ()=>{
   if(fetchedMessages.length===0){ gmailStatus('Fetch messages first.', true); return; }
-  loadFullGmailMessages(fetchedMessages).then(shouldProceed=>{
+  scanAllBtn.disabled = true; // a second click mid-scan would start a duplicate batch
+  loadFullGmailMessages(fetchedMessages).finally(()=>{ scanAllBtn.disabled = false; }).then(shouldProceed=>{
     if(!shouldProceed) return; // auth error already surfaced by loadFullGmailMessages
     const results = fetchedMessages.map(m=>{
       const result = analyzeEmail({subject:m.subject, sender:m.sender, urls:m.urls, metadata:m.date, body:m.body||m.snippet});
@@ -1381,13 +1387,39 @@ document.getElementById('btn-gmail-scanall').addEventListener('click', ()=>{
       if(!findScanByMsgId(r.msg.id)) recordScan(r.result, r.msg.id, r.msg.auth, r.msg.attachmentInfo);
     });
     renderBatchResults(results);
+    // Land on Results with the riskiest message (first after sorting) already open below the table.
+    showBatchResult(results, 0, false);
+    showView('results');
   });
 });
+
+// The batch table lives in the Results view (#batch-panel), above the single-result detail.
+function clearBatchResults(){
+  document.getElementById('gmail-batch-results').innerHTML='';
+  document.getElementById('batch-panel').hidden = true;
+}
+
+// Opens one batch row's full analysis in the detail panels below the table and highlights the row.
+function showBatchResult(results, idx, scroll){
+  const r = results[idx];
+  if(!r) return;
+  fillFormFromMessage(r.msg);
+  lastResult = r.result;
+  renderResults(lastResult);
+  document.getElementById('nav-results').disabled = false;
+  document.querySelectorAll('#gmail-batch-results tr[data-idx]').forEach(tr=>{
+    tr.classList.toggle('active-row', parseInt(tr.dataset.idx,10)===idx);
+  });
+  if(scroll) document.getElementById('result-banner').scrollIntoView({behavior:'smooth', block:'start'});
+}
 
 function renderBatchResults(results){
   const wrap = document.getElementById('gmail-batch-results');
   const order = {ai:0, human:1, legit:2};
   results.sort((a,b)=>order[a.result.label]-order[b.result.label]);
+  const count = label => results.filter(r=>r.result.label===label).length;
+  document.getElementById('batch-summary').textContent =
+    results.length+' scanned · '+count('ai')+' AI phishing · '+count('human')+' human phishing · '+count('legit')+' legitimate';
   let html = '<table class="batch-table"><thead><tr><th>Subject</th><th>From</th><th>Classification</th><th>Confidence</th></tr></thead><tbody>';
   results.forEach((r,idx)=>{
     html += '<tr data-idx="'+idx+'"><td>'+escapeHtml(r.msg.subject||'(no subject)')+'</td><td>'+escapeHtml(r.msg.sender)+'</td>'+
@@ -1395,15 +1427,9 @@ function renderBatchResults(results){
   });
   html += '</tbody></table>';
   wrap.innerHTML = html;
+  document.getElementById('batch-panel').hidden = false;
   wrap.querySelectorAll('tr[data-idx]').forEach(tr=>{
-    tr.addEventListener('click', ()=>{
-      const r = results[parseInt(tr.dataset.idx,10)];
-      fillFormFromMessage(r.msg);
-      lastResult = r.result;
-      renderResults(lastResult);
-      document.getElementById('nav-results').disabled = false;
-      showView('results');
-    });
+    tr.addEventListener('click', ()=>showBatchResult(results, parseInt(tr.dataset.idx,10), true));
   });
 
   // also reflect classification + confidence on the matching inbox row, where available
@@ -1443,7 +1469,7 @@ function disconnectGmail(){
   document.getElementById('gmail-connected').style.display='none';
   document.getElementById('gmail-disconnected').style.display='block';
   document.getElementById('gmail-messages').innerHTML='';
-  document.getElementById('gmail-batch-results').innerHTML='';
+  clearBatchResults();
   // Phase 2E-5: revoking access does not, by itself, remove Gmail message data already pulled
   // into this session (scanHistory/lastResult) — ask before discarding it, and only if there
   // actually is any, so the common "disconnect with nothing scanned yet" case is unchanged.

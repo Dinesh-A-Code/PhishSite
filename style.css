@@ -283,13 +283,27 @@
   .gmail-msg-subject{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);}
   .gmail-msg-meta{font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .gmail-msg-scan{flex-shrink:0;padding:7px 16px;font-size:12.5px;}
-  .gmail-batch-results{margin-top:20px;}
+  /* Inbox scan results (batch) — shown at the top of the Results view */
+  .batch-panel-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .batch-panel-head .panel-title{margin-bottom:6px;}
+  .batch-summary{font-size:11.5px;color:var(--muted);}
+  .batch-hint{font-size:12.5px;color:var(--muted);margin:0 0 14px;}
+  .gmail-batch-results{
+    max-height:380px;overflow:auto;border-radius:var(--radius-sm);
+    background:var(--surface-inset);box-shadow:var(--shadow-inset);
+  }
   .batch-table{width:100%;border-collapse:collapse;font-size:12.5px;}
-  .batch-table th,.batch-table td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);}
-  .batch-table th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-family:'IBM Plex Mono',monospace;}
-  .batch-table tr[data-idx]{cursor:pointer;}
-  .batch-table tr[data-idx]:hover td{color:var(--terra-deep);background:rgba(255,255,255,.35);}
-  .batch-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;color:#fff;}
+  .batch-table th,.batch-table td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);}
+  .batch-table th{
+    position:sticky;top:0;z-index:1;background:#e3e9e6;
+    color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-family:'IBM Plex Mono',monospace;
+  }
+  .batch-table tbody tr:last-child td{border-bottom:none;}
+  .batch-table tr[data-idx]{cursor:pointer;transition:background .15s ease;}
+  .batch-table tr[data-idx]:hover td{color:var(--terra-deep);background:rgba(255,255,255,.45);}
+  .batch-table tr.active-row td{background:rgba(255,255,255,.7);color:var(--text);font-weight:600;}
+  .batch-table tr.active-row td:first-child{box-shadow:inset 4px 0 0 var(--terra);}
+  .batch-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;color:#fff;white-space:nowrap;}
 
   /* RESULTS */
   .result-banner{

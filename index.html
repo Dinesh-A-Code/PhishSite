@@ -161,7 +161,6 @@
             </div>
           </div>
           <div id="gmail-messages" class="gmail-messages"></div>
-          <div id="gmail-batch-results" class="gmail-batch-results"></div>
         </div>
 
         <p class="gmail-status mono" id="gmail-status"></p>
@@ -234,6 +233,15 @@
     <section class="view" id="view-results">
       <div class="view-head">
         <p class="eyebrow">Evidence</p>
+      </div>
+
+      <div class="panel batch-panel" id="batch-panel" hidden>
+        <div class="batch-panel-head">
+          <p class="panel-title">Inbox scan results</p>
+          <span class="batch-summary mono" id="batch-summary"></span>
+        </div>
+        <p class="batch-hint">Sorted by risk. Click any email to see its full analysis below.</p>
+        <div id="gmail-batch-results" class="gmail-batch-results"></div>
       </div>
 
       <div class="result-banner" id="result-banner">
