@@ -1,6 +1,6 @@
 /* ---------- helpers ---------- */
 function escapeHtml(str){
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 function escapeReg(s){return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
 
@@ -331,7 +331,7 @@ function analyzeEmail(fields){
   const confidence = Math.round(probs[label]*100);
 
   const LABELS = {legit:"Legitimate", human:"Human phishing", ai:"AI phishing"};
-  const COLORS = {legit:"#46C08D", human:"#E3A23C", ai:"#C2467A"};
+  const COLORS = {legit:"#4E8A78", human:"#C97A43", ai:"#8A5579"};
 
   // signals
   let signals = [];
@@ -371,7 +371,13 @@ function analyzeEmail(fields){
   if(signals.length===0) signals.push({title:"Limited signal", detail:"Not enough distinguishing language was found in this input", weight:20, kind:'risk'});
 
   // annotated body html
-  let allMatches = [...urgencyMatches, ...genericMatches, ...aiMatches, ...spellingMatches, ...credentialMatches, ...securityMatches].sort((a,b)=>a.start-b.start);
+  // Matches were found in `full` (subject + " \n " + body), but only the body is annotated —
+  // shift offsets into body coordinates and drop subject-only matches.
+  const bodyOffset = subject.length + 3;
+  let allMatches = [...urgencyMatches, ...genericMatches, ...aiMatches, ...spellingMatches, ...credentialMatches, ...securityMatches]
+    .filter(m=>m.start>=bodyOffset)
+    .map(m=>({...m, start:m.start-bodyOffset, end:m.end-bodyOffset}))
+    .sort((a,b)=>a.start-b.start);
   let kept = []; let lastEnd=-1;
   allMatches.forEach(m=>{ if(m.start>=lastEnd){ kept.push(m); lastEnd=m.end; } });
 
@@ -780,11 +786,12 @@ function runAnalysisPipeline(){
 document.getElementById('btn-analyze').addEventListener('click', runAnalysisPipeline);
 
 /* ---------- gmail integration ---------- */
-// Phase 2E-6: application-owned OAuth Client ID — this is a public web-client identifier
-// (not a secret; it is always visible in the OAuth request itself), safe to ship in frontend
-// code. Registered against this deployment's exact origin(s) in Google Cloud Console under
-// "Authorized JavaScript origins". Replace with this app's real Client ID before deploying.
-const GOOGLE_OAUTH_CLIENT_ID = "915333477690-0k0sk9gsmpps4k334ea0p6m03e1i5od5.apps.googleusercontent.com";
+// Application-owned OAuth Client ID — a public web-client identifier (not a secret; it is
+// always visible in the OAuth request itself), safe to ship in frontend code. Belongs to the
+// dedicated "Phishsite" Google Cloud project. Only works from origins registered under
+// Google Cloud Console → Clients → this client → "Authorized JavaScript origins" (the Netlify
+// site URL, plus any local dev origin such as http://localhost:8000).
+const GOOGLE_OAUTH_CLIENT_ID = "40620771536-8nh08r97iq8f8pi488vtu11kt69m9oel.apps.googleusercontent.com";
 
 let googleTokenClient = null;
 let gmailAccessToken = null;
@@ -926,6 +933,20 @@ function extractBody(payload){
   return '';
 }
 
+// A raw message can carry its own forged "Authentication-Results" header injected by the
+// sender, alongside the genuine one Gmail stamps after it actually verified the message.
+// Gmail labels its own result with the authserv-id "mx.google.com" as the first token (e.g.
+// "Authentication-Results: mx.google.com; spf=pass ..."). Since every message here is
+// fetched through the Gmail API, Gmail's own header is always present for a verified message,
+// so we trust ONLY that one. If no mx.google.com-stamped header is found, we return '' rather
+// than fall back to an arbitrary sender-supplied header — surfacing a spoofed "pass" would be
+// worse than reporting authentication as unavailable (fail closed).
+function selectTrustedAuthResults(values){
+  if(!values || values.length===0) return '';
+  const gmailOwned = values.find(v => /^\s*mx\.google\.com\b/i.test(v));
+  return gmailOwned || '';
+}
+
 // Pulls a mechanism's result (pass/fail/neutral/softfail/none...) out of Gmail's own
 // Authentication-Results header text, e.g. "...; spf=pass ...; dkim=pass ...; dmarc=pass ...".
 function extractAuthResult(authResultsHeader, mechanism){
@@ -1024,13 +1045,14 @@ function analyzeAttachments(attachments){
 function parseGmailMessage(msg){
   const headers = (msg.payload && msg.payload.headers) || [];
   const getHeader = name => { const h = headers.find(h=>h.name.toLowerCase()===name.toLowerCase()); return h?h.value:''; };
+  const getAllHeaders = name => headers.filter(h=>h.name.toLowerCase()===name.toLowerCase()).map(h=>h.value);
   const subject = getHeader('Subject');
   const from = getHeader('From');
   const date = getHeader('Date');
   let body = extractBody(msg.payload) || msg.snippet || '';
   const urlMatches = body.match(/https?:\/\/[^\s"'<>)]+/g) || [];
   const auth = analyzeAuthHeaders({
-    authResults: getHeader('Authentication-Results'),
+    authResults: selectTrustedAuthResults(getAllHeaders('Authentication-Results')),
     received: getHeader('Received'),
     returnPath: getHeader('Return-Path'),
     replyTo: getHeader('Reply-To'),
@@ -1702,7 +1724,7 @@ const MODELS = {
   }
 };
 const CLASS_LABELS = ["Legit","Human","AI"];
-const CLASS_COLORS = ["#46C08D","#E3A23C","#C2467A"];
+const CLASS_COLORS = ["#4E8A78","#C97A43","#8A5579"];
 const MODEL_META = {
   tfidf:{name:"TF-IDF + XGBoost", note:"Lightweight baseline, fast to retrain"},
   distilbert:{name:"DistilBERT-inspired", note:"Higher accuracy, heavier inference cost"}
@@ -1738,8 +1760,8 @@ function renderLab(modelKey){
     row.forEach((val,j)=>{
       const cell = document.createElement('div'); cell.className='cell';
       const isDiag = i===j;
-      const intensity = 0.18 + 0.75*(val/maxVal);
-      cell.style.background = isDiag ? hexToRgba(CLASS_COLORS[i], intensity) : 'rgba(226,104,90,'+(0.12+0.5*(val/maxVal))+')';
+      const intensity = 0.15 + 0.5*(val/maxVal);
+      cell.style.background = isDiag ? hexToRgba(CLASS_COLORS[i], intensity) : 'rgba(185,80,63,'+(0.1+0.4*(val/maxVal))+')';
       cell.textContent = val;
       conf.appendChild(cell);
     });
