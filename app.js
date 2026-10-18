@@ -826,7 +826,7 @@ function scheduleGmailTokenRefresh(expiresInSeconds){
 // state (mirrors the parts of disconnectGmail() that clear local Gmail session state); it
 // deliberately does NOT touch scanHistory/lastResult, since an expired token is not a user
 // request to discard already-scanned data — see disconnectGmail() for that explicit action.
-function handleGmailAuthError(){
+function handleGmailAuthError(err){
   if(gmailRefreshTimer){ clearTimeout(gmailRefreshTimer); gmailRefreshTimer = null; }
   gmailAccessToken = null;
   fetchedMessages = [];
@@ -834,7 +834,11 @@ function handleGmailAuthError(){
   document.getElementById('gmail-disconnected').style.display='block';
   document.getElementById('gmail-messages').innerHTML='';
   document.getElementById('gmail-batch-results').innerHTML='';
-  gmailStatus('Your Gmail session expired or access was revoked — reconnect to keep scanning.', true);
+  if(err && err.isPermissionError){
+    gmailStatus("Google didn't grant permission to read your messages — click Continue with Google and make sure the Gmail access box is ticked on the consent screen.", true);
+  } else {
+    gmailStatus('Your Gmail session expired or access was revoked — reconnect to keep scanning.', true);
+  }
   if(document.getElementById('view-settings')) renderSettings();
 }
 
@@ -877,11 +881,16 @@ function gmailFetch(url){
     if(!r.ok){
       return r.json().catch(()=>({})).then(e=>{
         const err = new Error((e.error && e.error.message) ? e.error.message : ('HTTP '+r.status));
-        // Phase 2E-5: same request/response as before — only tagging the thrown error with the
-        // HTTP status so callers can tell an expired/revoked token (401/403) apart from any
-        // other failure, without each call site re-parsing the response itself.
+        // Tag the thrown error so callers can tell an expired/revoked token apart from other
+        // failures. Gmail also uses 403 for per-user rate limiting ("userRateLimitExceeded",
+        // "rateLimitExceeded") — that is a "slow down", not an auth failure, so it must not
+        // disconnect the session. Only a 401, or a 403 that isn't a rate limit, counts as auth.
+        const reason = (e.error && e.error.errors && e.error.errors[0] && e.error.errors[0].reason) || '';
         err.status = r.status;
-        err.isAuthError = r.status===401 || r.status===403;
+        err.reason = reason;
+        err.isRateLimit = r.status===429 || /ratelimitexceeded|quotaexceeded/i.test(reason);
+        err.isPermissionError = r.status===403 && /insufficientpermissions|forbidden/i.test(reason);
+        err.isAuthError = !err.isRateLimit && (r.status===401 || r.status===403);
         throw err;
       });
     }
@@ -896,7 +905,7 @@ function fetchGmailProfile(){
       if(document.getElementById('view-settings')) renderSettings();
     })
     .catch(e=>{
-      if(e.isAuthError){ handleGmailAuthError(); return; }
+      if(e.isAuthError){ handleGmailAuthError(e); return; }
       gmailStatus('Could not load profile: '+e.message, true);
     });
 }
@@ -1073,19 +1082,19 @@ const GMAIL_LIST_PAGE_SIZE = 100; // Gmail's messages.list allows up to 500 per 
 // per-message requests (metadata listing, full-content loading) are ever in flight at once —
 // this is what actually fixes "Too many concurrent requests for user.", which a single
 // Promise.all() over up to 100 ids would otherwise trigger.
-const GMAIL_FETCH_CONCURRENCY = 10;
+const GMAIL_FETCH_CONCURRENCY = 5; // messages.get costs 5 of Gmail's 250 quota units/sec per user — 10 in flight sat right at that limit
 const GMAIL_RETRY_MAX_ATTEMPTS = 4; // 1 initial attempt + up to 3 retries
-const GMAIL_RETRY_BASE_DELAY_MS = 500; // doubles each retry: 500ms, 1000ms, 2000ms
+const GMAIL_RETRY_BASE_DELAY_MS = 1000; // doubles each retry: 1s, 2s, 4s — long enough for a per-second rate limit to clear
 
 function delay(ms){ return new Promise(resolve=>setTimeout(resolve, ms)); }
 
-// 401/403 are authentication failures, not transient — those must never be retried here and
-// instead flow straight through to the existing isAuthError handling at each call site
-// (which routes them to handleGmailAuthError(), unchanged). 429 (rate limited) and 5xx are
-// the transient cases worth a bounded retry; anything else (400, 404, ...) is not.
+// Auth failures (see gmailFetch's isAuthError) are not transient — those must never be retried
+// here and instead flow straight through to handleGmailAuthError() at each call site. Rate
+// limits (429, or Gmail's 403 rateLimitExceeded variants) and 5xx are the transient cases
+// worth a bounded retry; anything else (400, 404, ...) is not.
 function isRetryableGmailError(err){
   if(err.isAuthError) return false;
-  return err.status===429 || (err.status>=500 && err.status<600);
+  return err.isRateLimit || (err.status>=500 && err.status<600);
 }
 
 // Truncated-exponential-backoff wrapper around the existing gmailFetch() — does not replace
@@ -1184,7 +1193,7 @@ function fetchGmailMessageMetadata(ids){
     });
   }).then(outcomes=>{
     const authFailure = outcomes.find(o=>!o.ok && o.error && o.error.isAuthError);
-    if(authFailure){ handleGmailAuthError(); return; }
+    if(authFailure){ handleGmailAuthError(authFailure.error); return; }
     fetchedMessages = outcomes.filter(o=>o.ok).map(o=>o.value);
     const failedCount = outcomes.length - fetchedMessages.length;
     renderGmailMessages(fetchedMessages);
@@ -1204,7 +1213,7 @@ function fetchGmailMessages(){
       return fetchGmailMessageMetadata(ids);
     })
     .catch(e=>{
-      if(e.isAuthError){ handleGmailAuthError(); return; }
+      if(e.isAuthError){ handleGmailAuthError(e); return; }
       gmailStatus('Could not fetch messages: '+e.message, true);
     });
 }
@@ -1277,7 +1286,7 @@ function scanGmailMessage(m){
       runGmailMessageAnalysis(m);
     })
     .catch(e=>{
-      if(e.isAuthError){ handleGmailAuthError(); return; }
+      if(e.isAuthError){ handleGmailAuthError(e); return; }
       gmailStatus('Could not load this message: '+e.message, true);
     });
 }
@@ -1301,7 +1310,12 @@ function loadFullGmailMessages(messages){
       .finally(()=>{ done++; gmailStatus('Scanning '+done+' of '+total+'…', false); });
   }).then(outcomes=>{
     const authFailure = outcomes.find(o=>!o.ok && o.error && o.error.isAuthError);
-    if(authFailure){ handleGmailAuthError(); return false; }
+    if(authFailure){ handleGmailAuthError(authFailure.error); return false; }
+    const failedCount = outcomes.filter(o=>!o.ok).length;
+    gmailStatus(
+      'Scanned '+messages.length+' messages'+(failedCount ? ' — '+failedCount+' could not be fully loaded and were analyzed from their preview text only.' : '.'),
+      false
+    );
     return true;
   });
 }
