@@ -875,7 +875,9 @@ function onGmailConnected(){
   document.getElementById('gmail-disconnected').style.display='none';
   document.getElementById('gmail-connected').style.display='block';
   fetchGmailProfile();
-  fetchGmailMessages();
+  // Nothing is fetched until the user picks how many emails they want and clicks Fetch.
+  gmailStatus('Connected. Enter how many recent emails to fetch (1–'+GMAIL_MAX_INBOX_MESSAGES+'), then click Fetch.', false);
+  document.getElementById('gmail-fetch-count').focus();
 }
 
 function gmailFetch(url){
@@ -1207,13 +1209,16 @@ function fetchGmailMessageMetadata(ids){
   });
 }
 
-// "Emails to fetch" field: digits only, 1..GMAIL_MAX_INBOX_MESSAGES. A value above the max is
-// snapped back to the max as you type; an empty/zero value disables the Fetch button.
+// "Emails to fetch" field: digits only, 1..GMAIL_MAX_INBOX_MESSAGES. Starts empty with Fetch
+// disabled, so the user always chooses the count. A value above the max is snapped back to the
+// max as you type; an empty/zero value keeps the Fetch button disabled.
 const fetchCountInput = document.getElementById('gmail-fetch-count');
 const fetchCountHint = document.getElementById('gmail-fetch-count-hint');
 const fetchBtn = document.getElementById('btn-gmail-refresh');
 fetchCountInput.max = GMAIL_MAX_INBOX_MESSAGES;
-fetchCountInput.value = GMAIL_MAX_INBOX_MESSAGES;
+fetchCountInput.value = '';
+fetchCountInput.placeholder = '1–'+GMAIL_MAX_INBOX_MESSAGES;
+fetchBtn.disabled = true;
 
 function setFetchCountHint(text, isErr){
   fetchCountHint.textContent = text;

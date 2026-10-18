@@ -152,10 +152,10 @@
             <div class="inbox-toolbar-actions">
               <div class="fetch-count">
                 <label for="gmail-fetch-count" class="fetch-count-label">Emails to fetch</label>
-                <input id="gmail-fetch-count" type="number" min="1" max="100" step="1" value="100" inputmode="numeric" aria-describedby="gmail-fetch-count-hint">
+                <input id="gmail-fetch-count" type="number" min="1" max="100" step="1" placeholder="1–100" inputmode="numeric" aria-describedby="gmail-fetch-count-hint">
                 <span class="fetch-count-hint mono" id="gmail-fetch-count-hint" aria-live="polite">Max 100</span>
               </div>
-              <button class="btn-secondary" id="btn-gmail-refresh">Fetch recent emails</button>
+              <button class="btn-secondary" id="btn-gmail-refresh" disabled>Fetch emails</button>
               <button class="btn-primary" id="btn-gmail-scanall">Scan all fetched</button>
               <button class="btn-secondary" id="btn-gmail-disconnect">Disconnect</button>
             </div>
