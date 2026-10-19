@@ -42,7 +42,7 @@ document.querySelectorAll('.sample-btn').forEach(btn=>{
 
 /* ---------- navigation ---------- */
 const VIEW_TITLES = {
-  dashboard:"Dashboard", inbox:"Inbox", scan:"Scan Email", results:"Results", history:"History", analytics:"Analytics", lab:"Model Lab", settings:"Settings"
+  dashboard:"Dashboard", inbox:"Inbox", scan:"Scan Email", results:"Results", history:"History", analytics:"Analytics", settings:"Settings", help:"Help"
 };
 function showView(name){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -54,12 +54,13 @@ function showView(name){
 }
 document.querySelectorAll('.nav-item').forEach(btn=>{
   btn.addEventListener('click',()=>{
-    if(!btn.disabled) showView(btn.dataset.view);
+    if(!btn.disabled && btn.dataset.view) showView(btn.dataset.view);
     const mobileToggle = document.getElementById('mobile-nav-toggle');
     if(mobileToggle) mobileToggle.checked = false;
   });
 });
 document.getElementById('btn-rescan').addEventListener('click',()=>showView('scan'));
+document.querySelectorAll('.help-link').forEach(btn=>btn.addEventListener('click',()=>showView(btn.dataset.goto)));
 const dashScanBtn = document.getElementById('btn-dash-scan');
 if(dashScanBtn) dashScanBtn.addEventListener('click', ()=>showView('scan'));
 
@@ -69,6 +70,8 @@ const MILD_URGENCY_WORDS = ["suspend","suspended","24 hours","24 hour","locked",
 const GENERIC_GREETINGS = ["dear valued customer","dear customer","dear user","dear member","dear sir","dear madam","dear account holder"];
 const AI_HEDGE_PHRASES = ["i hope this message finds you well","rest assured","we understand the inconvenience","at your earliest convenience","we kindly ask","thank you for your understanding","warm regards","please do not hesitate","we appreciate your","as a precaution","we are reaching out"];
 const SPELLING_WORDS = ["acount","verifiy","immediatly","bellow","permanant","recieve","seperate","occured","adress","activaty","cancelation","untill","wich","becuase"];
+// Correct spelling for each SPELLING_WORDS entry, shown to the user in explanations/tooltips.
+const SPELLING_FIXES = {acount:"account",verifiy:"verify",immediatly:"immediately",bellow:"below",permanant:"permanent",recieve:"receive",seperate:"separate",occured:"occurred",adress:"address",activaty:"activity",cancelation:"cancellation",untill:"until",wich:"which",becuase:"because"};
 
 // Phrases characteristic of a genuine account/security notification (new sign-in alerts,
 // 2FA changes, "was this you?" wording). Recognizing 2+ of these is used, together with
@@ -189,6 +192,29 @@ function isLookalikeHostname(host){
   return BRAND_KEYWORDS.some(b => normalized.includes(b));
 }
 
+// Explains how a lookalike hostname imitates a brand, for the learning panel: which brand,
+// which characters were swapped (e.g. "1" standing in for "l"), and the brand's real domain.
+function describeLookalike(host){
+  const core = host.replace(/\.(com|net|org|co|io|info|biz)$/i,'');
+  const swaps = [];
+  core.split('').forEach(ch=>{ if(LEET_MAP[ch] && !swaps.some(s=>s[0]===ch)) swaps.push([ch, LEET_MAP[ch]]); });
+  const normalized = core.split('').map(ch=>LEET_MAP[ch]||ch).join('').replace(/-/g,'');
+  const brandKey = BRAND_KEYWORDS.find(b=>normalized.includes(b));
+  const brandName = Object.keys(TRUSTED_DOMAINS).find(k=>k.toLowerCase()===brandKey) || brandKey;
+  return {brand:brandName, realDomain: brandName && TRUSTED_DOMAINS[brandName] ? TRUSTED_DOMAINS[brandName][0] : null, swaps, hyphens:/-/.test(core)};
+}
+
+// Hover text for a highlighted phrase in the annotated email body.
+function markTip(m){
+  const lower = m.match.toLowerCase();
+  if(m.category==='error') return 'Spelling mistake — should be "'+(SPELLING_FIXES[lower]||lower)+'". Typos are common in hastily written scam emails.';
+  if(m.category==='neutral') return 'Generic greeting — the sender does not use your name, which mass scam emails often avoid.';
+  if(m.category==='ai') return 'Template-like, overly polite wording — typical of AI-written phishing.';
+  if(m.category==='security') return 'Wording found in genuine account/security notifications.';
+  if(CREDENTIAL_HARVEST_PHRASES.includes(lower)) return 'Asks for a password or payment details — real companies never do this by email.';
+  return 'Urgency — pressure to act fast so you click before thinking.';
+}
+
 // Parses the real hostname(s) out of a URL field (which may hold several links in plain,
 // markdown, HTML-anchor, or bare-domain form) instead of pattern-matching the raw string,
 // so query-string/path text never gets mistaken for the domain.
@@ -257,7 +283,8 @@ function analyzeEmail(fields){
   const exclaimCount = (full.match(/!!/g)||[]).length;
   // Only a genuine multi-word all-caps run counts as "shouting" — a single capitalized
   // word (a device/OS/brand name, common in real notification emails) no longer does.
-  const capsWords = (full.match(/\b[A-Z]{2,}(?:\s+[A-Z]{2,}){1,}\b/g)||[]).length;
+  const capsRuns = full.match(/\b[A-Z]{2,}(?:\s+[A-Z]{2,}){1,}\b/g)||[];
+  const capsWords = capsRuns.length;
 
   const urlInfo = classifyUrls(urls);
   const senderInfo = classifySender(sender);
@@ -386,7 +413,7 @@ function analyzeEmail(fields){
   kept.forEach(m=>{
     html += escapeHtml(body.slice(pos,m.start));
     const cls = m.category==='human'?'tag-human':m.category==='ai'?'tag-ai':m.category==='security'?'tag-security':m.category==='neutral'?'tag-neutral':'tag-error';
-    html += '<mark class="'+cls+'">'+escapeHtml(m.match)+'</mark>';
+    html += '<mark class="'+cls+'" title="'+escapeHtml(markTip(m))+'">'+escapeHtml(m.match)+'</mark>';
     pos = m.end;
   });
   html += escapeHtml(body.slice(pos));
@@ -407,6 +434,16 @@ function analyzeEmail(fields){
   return {
     label, labelText:LABELS[label], color:COLORS[label], confidence,
     signals, annotatedHtml:html,
+    // Raw findings behind the signals — used by buildLesson() to explain this specific email.
+    evidence: {
+      strongUrgency: strongUrgencyMatches.map(m=>m.match), mildUrgency: mildUrgencyMatches.map(m=>m.match),
+      generic: genericMatches.map(m=>m.match), ai: aiMatches.map(m=>m.match),
+      spelling: spellingMatches.map(m=>m.match), credential: credentialMatches.map(m=>m.match),
+      security: securityMatches.map(m=>m.match),
+      exclaimCount, capsRuns, personalGreeting,
+      urlInfo, senderInfo, senderLinkMismatch, trustedDomainSeen,
+      strongPhishingSignal, securityContext
+    },
     subject, sender, urls, metadata:fields.metadata||"",
     suspiciousUrl, suspiciousSender,
     riskText: riskTexts[label], recommendText: recommendTexts[label]
@@ -686,33 +723,6 @@ function renderSettings(){
         </div>
         <button class="btn-secondary" id="btn-settings-clear" ${scanHistory.length===0?'disabled':''}>Clear session history</button>
       </div>
-    </div>
-
-    <div class="panel settings-section">
-      <p class="panel-title">Coming later</p>
-      <div class="settings-row settings-row-disabled">
-        <div>
-          <p class="settings-row-title">Automatic analysis</p>
-          <p class="gmail-desc">Run classification in the background as new mail arrives.</p>
-        </div>
-        <span class="settings-badge settings-badge-soon">Coming later</span>
-      </div>
-      <hr class="settings-divider">
-      <div class="settings-row settings-row-disabled">
-        <div>
-          <p class="settings-row-title">Threat alerts</p>
-          <p class="gmail-desc">Notify you immediately when a high-confidence threat is found.</p>
-        </div>
-        <span class="settings-badge settings-badge-soon">Coming later</span>
-      </div>
-      <hr class="settings-divider">
-      <div class="settings-row settings-row-disabled">
-        <div>
-          <p class="settings-row-title">Appearance</p>
-          <p class="gmail-desc">Light theme and custom accent colors.</p>
-        </div>
-        <span class="settings-badge settings-badge-soon">Coming later</span>
-      </div>
     </div>`;
 
   if(connected){
@@ -924,25 +934,52 @@ function base64UrlDecode(str){
   }
 }
 
+// Invisible/zero-width characters marketing emails pad their preview text with (soft hyphen,
+// combining grapheme joiner, figure space, zero-width space/joiners, BOM, bidi marks...).
+const INVISIBLE_CHARS_RE = /[­͏؜ᅟᅠ឴឵᠎ ​-‏‪-‮⁠-⁤⁪-⁯ㅤ﻿ﾠ]/g;
+
+// Normalizes extracted email text for display/analysis: drops invisible padding characters,
+// collapses runs of spaces, trims each line, and limits blank lines to one.
+function cleanEmailText(text){
+  return String(text||'')
+    .replace(INVISIBLE_CHARS_RE,'')
+    .replace(/\r\n?/g,'\n')
+    .replace(/[ \t ]+/g,' ')
+    .split('\n').map(l=>l.trim()).join('\n')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
+}
+
+// Converts an HTML email part to readable text. DOMParser produces an inert document (no
+// scripts run, no images or other resources load), so this is safe for untrusted mail; it
+// also decodes entities (&amp;, &#8199;...) and leaves out HTML comments, which the old
+// tag-stripping regex let through.
+function htmlToText(html){
+  const doc = new DOMParser().parseFromString(String(html||''), 'text/html');
+  doc.querySelectorAll('head,style,script,noscript,template').forEach(n=>n.remove());
+  // Hidden "preheader" text: shown in inbox previews but never in the opened email.
+  doc.querySelectorAll('[style]').forEach(n=>{ if(/display\s*:\s*none|visibility\s*:\s*hidden/i.test(n.getAttribute('style'))) n.remove(); });
+  doc.querySelectorAll('br').forEach(n=>n.replaceWith('\n'));
+  doc.querySelectorAll('p,div,tr,li,table,h1,h2,h3,h4,h5,h6,blockquote').forEach(n=>n.append('\n'));
+  return doc.body ? doc.body.textContent : '';
+}
+
 function extractBody(payload){
   if(!payload) return '';
-  if(payload.mimeType==='text/plain' && payload.body && payload.body.data){
-    return base64UrlDecode(payload.body.data);
-  }
+  const data = p => p && p.body && p.body.data;
+  if(payload.mimeType==='text/plain' && data(payload)) return cleanEmailText(base64UrlDecode(payload.body.data));
+  if(payload.mimeType==='text/html' && data(payload)) return cleanEmailText(htmlToText(base64UrlDecode(payload.body.data)));
   if(payload.parts){
     const plain = payload.parts.find(p=>p.mimeType==='text/plain');
-    if(plain && plain.body && plain.body.data) return base64UrlDecode(plain.body.data);
+    if(data(plain)) return cleanEmailText(base64UrlDecode(plain.body.data));
     const htmlPart = payload.parts.find(p=>p.mimeType==='text/html');
-    if(htmlPart && htmlPart.body && htmlPart.body.data){
-      const html = base64UrlDecode(htmlPart.body.data);
-      return html.replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
-    }
+    if(data(htmlPart)) return cleanEmailText(htmlToText(base64UrlDecode(htmlPart.body.data)));
     for(const p of payload.parts){
       const r = extractBody(p);
       if(r) return r;
     }
   }
-  if(payload.body && payload.body.data) return base64UrlDecode(payload.body.data);
+  if(data(payload)) return cleanEmailText(base64UrlDecode(payload.body.data));
   return '';
 }
 
@@ -1062,7 +1099,8 @@ function parseGmailMessage(msg){
   const subject = getHeader('Subject');
   const from = getHeader('From');
   const date = getHeader('Date');
-  let body = extractBody(msg.payload) || msg.snippet || '';
+  const snippet = cleanEmailText(htmlToText(msg.snippet)); // Gmail returns snippets HTML-encoded
+  let body = extractBody(msg.payload) || snippet;
   const urlMatches = body.match(/https?:\/\/[^\s"'<>)]+/g) || [];
   const auth = analyzeAuthHeaders({
     authResults: selectTrustedAuthResults(getAllHeaders('Authentication-Results')),
@@ -1074,7 +1112,7 @@ function parseGmailMessage(msg){
   });
   const attachmentInfo = analyzeAttachments(extractAttachments(msg.payload));
   return {
-    id: msg.id, subject, sender: from, date, snippet: msg.snippet || '',
+    id: msg.id, subject, sender: from, date, snippet,
     body, urls: urlMatches.slice(0,3).join(', '), auth, attachmentInfo
   };
 }
@@ -1177,7 +1215,7 @@ function parseGmailMessageMetadata(msg){
     subject: getHeader('Subject'),
     sender: getHeader('From'),
     date: getHeader('Date'),
-    snippet: msg.snippet || ''
+    snippet: cleanEmailText(htmlToText(msg.snippet)) // Gmail returns snippets HTML-encoded
   };
 }
 
@@ -1465,7 +1503,8 @@ function clearGmailScanData(){
   if(document.getElementById('view-settings')) renderSettings();
 }
 
-function disconnectGmail(){
+// Revokes the Gmail token and resets the Inbox UI. Shared by disconnectGmail() and logout().
+function endGmailSession(){
   if(gmailAccessToken && window.google && google.accounts && google.accounts.oauth2){
     google.accounts.oauth2.revoke(gmailAccessToken, ()=>{});
   }
@@ -1475,6 +1514,10 @@ function disconnectGmail(){
   document.getElementById('gmail-disconnected').style.display='block';
   document.getElementById('gmail-messages').innerHTML='';
   clearBatchResults();
+}
+
+function disconnectGmail(){
+  endGmailSession();
   // Phase 2E-5: revoking access does not, by itself, remove Gmail message data already pulled
   // into this session (scanHistory/lastResult) — ask before discarding it, and only if there
   // actually is any, so the common "disconnect with nothing scanned yet" case is unchanged.
@@ -1488,6 +1531,25 @@ function disconnectGmail(){
   if(document.getElementById('view-settings')) renderSettings();
 }
 document.getElementById('btn-gmail-disconnect').addEventListener('click', disconnectGmail);
+
+// Logout ends the whole session: Gmail access is revoked and every scan from this tab is
+// discarded, leaving the page as it was when first opened.
+function logout(){
+  if(!window.confirm('Log out of PhishSite? This disconnects Gmail (if connected) and clears every scan from this session.')) return;
+  endGmailSession();
+  scanHistory = [];
+  lastResult = null;
+  document.getElementById('nav-results').disabled = true;
+  ['in-subject','in-sender','in-urls','in-metadata','in-body'].forEach(id=>{ document.getElementById(id).value=''; });
+  gmailStatus('', false);
+  document.getElementById('scan-status').textContent = '';
+  renderDashboard();
+  renderHistory();
+  renderAnalytics();
+  renderSettings();
+  showView('dashboard');
+}
+document.getElementById('nav-logout').addEventListener('click', logout);
 
 // Display-layer only: groups an already-generated signal into one of three presentation
 // tiers. Never invents evidence — every signal here was produced by analyzeEmail() itself.
@@ -1618,6 +1680,204 @@ function attachmentWhyFindings(attachmentInfo){
   }));
 }
 
+/* ---------- learning panel: plain-language explanation of one result ---------- */
+const uniqCI = arr => [...new Map((arr||[]).map(s=>[String(s).toLowerCase(), s])).values()];
+// Also drops phrases contained in a longer one ("24 hour" inside "24 hours").
+const uniqPhrases = arr => { const u = uniqCI(arr); return u.filter(a=>!u.some(b=>b!==a && b.toLowerCase().includes(a.toLowerCase()))); };
+const listWords = arr => arr.length<=1 ? arr.join('') : arr.slice(0,-1).join(', ')+' and '+arr[arr.length-1];
+
+// Builds the "Learn from this email" content from a result's real findings. Every card is
+// backed by something analyzeEmail()/analyzeAuthHeaders()/analyzeAttachments() actually
+// detected in this email — nothing is generic filler. Cards: tone 'risk' | 'caution' | 'good'.
+function buildLesson(r){
+  const ev = r.evidence;
+  if(!ev) return null;
+  const cards = [];
+  const auth = r.authInfo && r.authInfo.available ? r.authInfo : null;
+  const att = r.attachmentInfo && r.attachmentInfo.available ? r.attachmentInfo : null;
+  const fromDomain = (auth && auth.fromDomain) || ev.senderInfo.domain;
+
+  // --- strong warning signs ---
+  const creds = uniqCI(ev.credential);
+  if(creds.length) cards.push({tone:'risk', title:'It asks for your password or payment details', quotes:creds,
+    why:'Real banks, shops and online services never ask you to type a password, PIN or card number because of an email. Getting these details is the main goal of most phishing emails.',
+    tip:'Never enter these details from an email link. Open the official app, or type the company\'s website address yourself.'});
+
+  const lookHosts = uniqCI([...(ev.senderInfo.lookalike?[ev.senderInfo.domain]:[]), ...ev.urlInfo.hosts.filter(isLookalikeHostname)]);
+  // One card per imitated brand, even when both the sender and a link use lookalikes.
+  const byBrand = {};
+  lookHosts.forEach(host=>{ const d = describeLookalike(host); (byBrand[d.brand] = byBrand[d.brand] || {d, hosts:[], swaps:[]}).hosts.push(host);
+    d.swaps.forEach(s=>{ if(!byBrand[d.brand].swaps.some(x=>x[0]===s[0])) byBrand[d.brand].swaps.push(s); }); });
+  Object.values(byBrand).forEach(({d, hosts, swaps})=>{
+    const how = swaps.length
+      ? 'They use '+listWords(swaps.map(([a,b])=>'"'+a+'" in place of "'+b+'"'))+' so they look like '+d.brand+' at a quick glance.'
+      : 'They wrap the name "'+d.brand+'" in extra words and hyphens so they look official.';
+    cards.push({tone:'risk', title:'The address imitates '+d.brand, quotes:hosts.map(h=>h+(d.realDomain?'  ≠  '+d.realDomain:'')),
+      why:listWords(hosts.map(h=>'"'+h+'"'))+(hosts.length>1?' are':' is')+' not '+(d.realDomain||d.brand)+'. '+(hosts.length>1?how:how.replace(/^They use/,'It uses').replace(/^They wrap/,'It wraps').replace(/ so they look/,' so it looks'))+
+        ' Scammers register lookalike addresses because most people only skim them.',
+      tip:'Read an address from the right: the word just before .com (or .in, .org…) is who really owns it.'});
+  });
+
+  const riskyHosts = uniqCI([...(ev.senderInfo.riskyTld?[ev.senderInfo.domain]:[]), ...ev.urlInfo.hosts.filter(h=>RISKY_TLDS.some(t=>h.endsWith('.'+t)))]);
+  if(riskyHosts.length) cards.push({tone:'risk', title:'It uses an unusual web address ending', quotes:riskyHosts,
+    why:'Endings like .xyz, .top, .tk, .zip or .ru are cheap and often used for short-lived scam sites. Not every site using them is bad, but big brands almost never send email from them.',
+    tip:'Be extra careful when a "bank" or "delivery company" uses an address ending you have never seen them use.'});
+
+  if(ev.urlInfo.insecure) cards.push({tone:'risk', title:'A link uses an unsecured connection (http://)', quotes:uniqCI(ev.urlInfo.hosts.filter(h=>!isTrustedHostname(h))).slice(0,3),
+    why:'Links starting with http:// (no "s") are not encrypted, so anything typed there can be intercepted. Genuine login and payment pages always use https://.',
+    tip:'Before typing anything on a website, check the address bar starts with https:// and shows the real company\'s domain.'});
+
+  const deepHosts = uniqCI([...(ev.senderInfo.excessiveSubdomains?[ev.senderInfo.domain]:[]), ...ev.urlInfo.hosts.filter(hasExcessiveSubdomains)]);
+  if(deepHosts.length) cards.push({tone:'risk', title:'The address is unusually long', quotes:deepHosts,
+    why:'Scammers stack familiar words in front of their own domain (for example login.paypal.com.secure-check.xyz) so a trusted name appears first. Only the end of the address decides where you really go.',
+    tip:'Ignore everything before the last two parts of the address — those last parts are the real site.'});
+
+  if(ev.senderLinkMismatch && ev.strongPhishingSignal) cards.push({tone:'risk', title:'The link leads away from the sender\'s website', quotes:[(ev.senderInfo.domain||'sender')+'  →  '+ev.urlInfo.hosts[0]],
+    why:'The email claims to come from one domain, but its link sends you to a different one. Combined with the other warning signs here, that is a classic phishing pattern.',
+    tip:'Hover over (or long-press) a link to see where it really goes before you click.'});
+
+  if(auth){
+    const failed = [['SPF',auth.spf],['DKIM',auth.dkim],['DMARC',auth.dmarc]].filter(([,v])=>v==='fail').map(([k])=>k);
+    if(failed.length || auth.alignment==='misaligned') cards.push({tone:'risk', title:'The sender\'s identity could not be verified', quotes:failed.length?failed.map(f=>f+': fail'):['Sender domain not aligned'],
+      why:'Email has built-in checks (SPF, DKIM and DMARC) that confirm a message really comes from the domain in the "From" line. This email failed them, so the sender address may be forged.',
+      tip:'Don\'t trust a familiar name on a failed check. Contact the company through its official website or app instead.'});
+  }
+
+  if(att && att.suspicious.some(a=>a.risk==='high')) cards.push({tone:'risk', title:'It has a dangerous attachment', quotes:att.suspicious.filter(a=>a.risk==='high').map(a=>a.filename),
+    why:'Files like .exe, .scr, .bat, .js or .vbs are programs. Opening one can install malware on your computer, and no genuine invoice or document needs to be a program.',
+    tip:'Never open program files sent by email, even from people you know — their account may have been hacked.'});
+
+  // --- weaker warning signs ---
+  const urgency = uniqPhrases([...ev.strongUrgency, ...ev.mildUrgency]);
+  if(urgency.length) cards.push({tone:'caution', title:'It tries to rush you', quotes:urgency.slice(0,5),
+    why: ev.securityContext
+      ? 'Security alerts naturally contain some urgent words. What matters more is whether the sender and links are genuine — check those before acting.'
+      : 'Phrases about deadlines, suspension or "act now" create panic so you click before thinking. Genuine companies usually give you time and other ways to sort things out.',
+    tip:'Slow down. If you are worried, log in to the official site or app yourself and check there.'});
+
+  const generic = uniqCI(ev.generic);
+  if(generic.length) cards.push({tone:'caution', title:'It doesn\'t use your name', quotes:generic,
+    why:'Services you have an account with usually greet you by name. Scammers send the same email to thousands of people, so they write "Dear Customer". Newsletters do this too, so on its own it is a weak sign.',
+    tip:'Ask yourself: would this company know my name? If yes, a generic greeting is suspicious.'});
+
+  const typos = uniqCI(ev.spelling);
+  if(typos.length) cards.push({tone:'caution', title:'It has spelling mistakes', quotes:typos.map(t=>t+'  →  '+(SPELLING_FIXES[t.toLowerCase()]||t)),
+    why:'Real companies proofread their emails. Typos are common in scam emails that are written in a hurry, and some are added on purpose to slip past spam filters.',
+    tip:'A single typo can happen anywhere, but several in a short "official" message is a red flag.'});
+
+  const formatQuotes = [...(ev.exclaimCount?['"!!" used '+ev.exclaimCount+' time'+(ev.exclaimCount===1?'':'s')]:[]), ...uniqCI(ev.capsRuns).slice(0,4)];
+  if(formatQuotes.length) cards.push({tone:'caution', title:'It uses attention-grabbing formatting', quotes:formatQuotes,
+    why:'Repeated exclamation marks and WORDS IN CAPITALS are used to grab attention and raise emotion. Marketing emails do this too, so it is only a weak hint on its own.',
+    tip:'Look past the excitement: does the email want you to click, pay or log in? That is what to check.'});
+
+  const aiPhrases = uniqCI(ev.ai);
+  if(aiPhrases.length) cards.push({tone:'caution', title:'It uses smooth, template-like wording', quotes:aiPhrases.slice(0,4),
+    why:'AI tools produce polite, fluent text with phrases like "Rest assured" or "at your earliest convenience". Scammers now use them, so an email with no typos is not automatically safe.',
+    tip:'Judge an email by what it asks you to do and who really sent it, not by how well it is written.'});
+
+  if(auth && auth.replyToMismatch) cards.push({tone:'caution', title:'Replies would go to a different address', quotes:[auth.fromDomain+'  →  replies go to '+auth.replyToDomain],
+    why:'If you press Reply, your answer goes to '+auth.replyToDomain+', not '+auth.fromDomain+'. Scammers use this trick so they receive your reply. It can be harmless when both domains belong to the same organization.',
+    tip:'Before replying with anything personal, check the address in the "To" field of your reply.'});
+
+  if(auth){
+    const missing = [];
+    if(auth.spf==='none') missing.push('SPF');
+    if(auth.dkim==='none' && !auth.hasDkimSignature) missing.push('DKIM');
+    if(missing.length) cards.push({tone:'caution', title:'The sender skipped standard verification', quotes:missing.map(m=>m+': not set up'),
+      why:'Most legitimate companies set up these checks so their emails can be verified. Missing checks make it easier for someone to fake this sender.',
+      tip:'Treat requests from this sender with extra care, especially if they involve money or logins.'});
+  }
+
+  if(att && att.suspicious.some(a=>a.risk==='medium')) cards.push({tone:'caution', title:'It has an attachment that can hide harmful content', quotes:att.suspicious.filter(a=>a.risk==='medium').map(a=>a.filename),
+    why:'Archives (.zip, .rar, .iso), web pages (.html) and macro documents (.docm, .xlsm) can contain hidden programs or fake login pages.',
+    tip:'Only open these if you expected the file. Never click "Enable content" or "Enable macros".'});
+
+  // --- good signs ---
+  const authPassed = auth && auth.spf==='pass' && auth.dkim==='pass' && auth.dmarc==='pass' && auth.alignment!=='misaligned';
+  if(authPassed) cards.push({tone:'good', title:'The sender\'s identity checks out', quotes:['SPF, DKIM and DMARC: pass'],
+    why:'This email passed all three authentication checks, so it really was sent by '+fromDomain+' — the sender address is not forged. This tells you who sent it, not whether the content is honest: scammers can also verify domains they own.',
+    tip:'Still check that '+fromDomain+' is the company you think it is.'});
+  if(ev.personalGreeting) cards.push({tone:'good', title:'It greets you by name', quotes:[],
+    why:'Using your name suggests the sender knows who you are. It is a good sign, though scammers sometimes get names from data leaks.', tip:''});
+  if(ev.trustedDomainSeen) cards.push({tone:'good', title:'It involves a well-known domain', quotes:uniqCI([ev.senderInfo.domain, ...ev.urlInfo.hosts].filter(h=>h && isTrustedHostname(h))),
+    why:'The sender or a link uses the real domain of a well-known company rather than a lookalike.', tip:''});
+  if(r.label==='legit' && !urgency.length) cards.push({tone:'good', title:'No pressure to act quickly', quotes:[],
+    why:'The email doesn\'t threaten you or set a deadline. Genuine messages usually inform you calmly.', tip:''});
+
+  // --- verdict + evidence strength ---
+  const riskCards = cards.filter(c=>c.tone==='risk');
+  const cautionCards = cards.filter(c=>c.tone==='caution');
+  // A phishing label backed only by weak signs (no 'risk' card) gets a softer, honest verdict.
+  const weakOnly = r.label!=='legit' && riskCards.length===0;
+  const top = [...riskCards, ...cautionCards].slice(0,2).map(c=>c.title.charAt(0).toLowerCase()+c.title.slice(1));
+  let tone, headline, summary, note = '';
+  if(r.label==='legit'){
+    tone = 'good'; headline = 'This email looks safe';
+    summary = cautionCards.length || riskCards.length
+      ? 'Overall it looks like normal correspondence, but we noticed a few things worth knowing about below. No automatic check is perfect, so stay alert.'
+      : 'We didn\'t find the usual tricks that phishing emails use. No automatic check is perfect, so stay alert for anything unexpected.';
+  } else if(weakOnly){
+    tone = 'caution'; headline = 'Be careful — but this may be a normal email';
+    summary = 'We noticed '+(top.length ? listWords(top) : 'a few weak signs')+'. These can appear in phishing, but also in everyday newsletters and offers.';
+    note = 'No strong warning signs were found'+(authPassed?', and the email passed all sender checks':'')+
+      '. Treat it as "be careful", not as "definitely a scam" — and use the checks below if it asks you to log in or pay.';
+  } else {
+    tone = 'risk';
+    headline = r.label==='ai' ? 'This email looks like AI-written phishing' : 'This email looks like phishing';
+    summary = (top.length ? 'The main reasons: '+listWords(top)+'. ' : '')+
+      (r.label==='ai' ? 'It is fluent and polite — which is exactly what makes AI-written phishing convincing.' : 'Don\'t click its links or reply until you have checked it yourself.');
+  }
+
+  // --- how to check it yourself ---
+  const steps = ['Look at the sender\'s address, not just the name — the part after @ should be the company\'s real domain.'];
+  if(ev.urlInfo.hasUrl) steps.push('Hover over (or long-press) each link to see where it really goes before clicking.');
+  if(r.label!=='legit' || creds.length) steps.push('Never enter passwords or card details from an email link. Open the official app or type the website address yourself.');
+  steps.push('If the email says something is wrong with your account, check by logging in to the official site directly, or call the company\'s official number.');
+  if(att) steps.push('Don\'t open attachments you weren\'t expecting, even from people you know.');
+  if(r.label!=='legit') steps.push('Report it: in Gmail, open the email, click the ⋮ menu and choose "Report phishing".');
+
+  return {tone, headline, summary, note, cards:[...riskCards, ...cautionCards, ...cards.filter(c=>c.tone==='good')], steps};
+}
+
+function renderLesson(r){
+  const body = document.getElementById('lesson-body');
+  const lesson = buildLesson(r);
+  // Results saved before evidence was recorded have no findings to explain; fall back to the
+  // per-label summary and what-to-do list.
+  if(!lesson){
+    body.innerHTML = '<p class="lesson-summary">'+escapeHtml(r.riskText||'')+'</p>'+
+      '<p class="lesson-section-title" style="margin-top:16px;">What should you do?</p><ol class="lesson-steps">'+
+      buildRecommendation(r).map(a=>'<li>'+escapeHtml(a)+'</li>').join('')+'</ol>';
+    return null;
+  }
+  const toneLabel = {risk:'Warning sign', caution:'Be careful', good:'Good sign'};
+  const icon = {risk:'!', caution:'?', good:'✓'};
+  let html =
+    '<div class="lesson-verdict lesson-'+lesson.tone+'">'+
+      '<span class="lesson-verdict-icon">'+icon[lesson.tone]+'</span>'+
+      '<div><p class="lesson-headline">'+escapeHtml(lesson.headline)+'</p>'+
+      '<p class="lesson-summary">'+escapeHtml(lesson.summary)+'</p>'+
+      (lesson.note ? '<p class="lesson-note">'+escapeHtml(lesson.note)+'</p>' : '')+'</div>'+
+    '</div>';
+  if(lesson.cards.length){
+    html += '<p class="lesson-section-title">What we noticed — and why it matters</p><div class="lesson-cards">';
+    lesson.cards.forEach(c=>{
+      html += '<div class="lesson-card lesson-card-'+c.tone+'">'+
+        '<span class="lesson-card-tag">'+toneLabel[c.tone]+'</span>'+
+        '<p class="lesson-card-title">'+escapeHtml(c.title)+'</p>'+
+        (c.quotes.length ? '<p class="lesson-card-label">In this email</p><div class="lesson-quotes">'+c.quotes.map(q=>'<span class="lesson-quote">'+escapeHtml(q)+'</span>').join('')+'</div>' : '')+
+        '<p class="lesson-card-label">Why it matters</p><p class="lesson-card-text">'+escapeHtml(c.why)+'</p>'+
+        (c.tip ? '<p class="lesson-card-tip"><b>Tip:</b> '+escapeHtml(c.tip)+'</p>' : '')+
+      '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<p class="lesson-section-title">How to check an email like this yourself</p><ol class="lesson-steps">'+
+    lesson.steps.map(s=>'<li>'+escapeHtml(s)+'</li>').join('')+'</ol>';
+  body.innerHTML = html;
+  return lesson;
+}
+
 function renderResults(r){
   const banner = document.getElementById('result-banner');
   banner.style.borderLeftColor = r.color;
@@ -1708,13 +1968,7 @@ function renderResults(r){
   fillWhyList('why-risk-list', riskSignals);
   fillWhyList('why-attention-list', attentionSignals);
 
-  document.getElementById('risk-panel').style.borderLeftColor = r.color;
-  document.getElementById('risk-text').textContent = r.riskText;
-  document.getElementById('recommend-text').textContent = r.recommendText;
-  document.getElementById('recommend-text').style.color = r.color;
-
-  const actionList = document.getElementById('action-list');
-  actionList.innerHTML = buildRecommendation(r).map(a=>'<li>'+escapeHtml(a)+'</li>').join('');
+  renderLesson(r);
 
   const auth = r.authInfo;
   const authUnavailable = document.getElementById('auth-unavailable');
@@ -1791,7 +2045,12 @@ document.getElementById('btn-export').addEventListener('click', ()=>{
     },
     risk_summary: lastResult.riskText,
     recommended_action: lastResult.recommendText,
-    suggested_next_steps: buildRecommendation(lastResult)
+    suggested_next_steps: buildRecommendation(lastResult),
+    explanation: (lesson => lesson ? {
+      verdict: lesson.headline, summary: lesson.summary, note: lesson.note || undefined,
+      findings: lesson.cards.map(c=>({type:c.tone, finding:c.title, in_this_email:c.quotes, why_it_matters:c.why, tip:c.tip||undefined})),
+      how_to_check: lesson.steps
+    } : undefined)(buildLesson(lastResult))
   };
   const blob = new Blob([JSON.stringify(report,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -1802,87 +2061,10 @@ document.getElementById('btn-export').addEventListener('click', ()=>{
   URL.revokeObjectURL(url);
 });
 
-/* ---------- model lab ---------- */
-const MODELS = {
-  tfidf:{
-    kpis:{accuracy:91.4, precision:90.1, recall:89.6, f1:89.8},
-    matrix:[[92,5,3],[6,88,6],[4,9,87]]
-  },
-  distilbert:{
-    kpis:{accuracy:94.7, precision:94.0, recall:93.8, f1:93.9},
-    matrix:[[96,2,2],[3,93,4],[2,5,93]]
-  }
-};
-const CLASS_LABELS = ["Legit","Human","AI"];
-const CLASS_COLORS = ["#4E8A78","#C97A43","#8A5579"];
-const MODEL_META = {
-  tfidf:{name:"TF-IDF + XGBoost", note:"Lightweight baseline, fast to retrain"},
-  distilbert:{name:"DistilBERT-inspired", note:"Higher accuracy, heavier inference cost"}
-};
-
-function renderLab(modelKey){
-  const m = MODELS[modelKey];
-  document.getElementById('lab-overview-name').textContent = MODEL_META[modelKey].name;
-  document.getElementById('lab-overview-note').textContent = MODEL_META[modelKey].note;
-  const kpiRow = document.getElementById('kpi-row');
-  kpiRow.innerHTML = '';
-  [['Accuracy',m.kpis.accuracy],['Precision',m.kpis.precision],['Recall',m.kpis.recall],['F1-score',m.kpis.f1]].forEach(([label,val])=>{
-    const card = document.createElement('div');
-    card.className='kpi-card';
-    card.innerHTML = '<p class="kpi-label">'+label+'</p><p class="kpi-value">'+val+'%</p>';
-    kpiRow.appendChild(card);
-  });
-
-  document.querySelectorAll('#cmp-table tbody tr').forEach(tr=>{
-    tr.classList.toggle('active-row', tr.dataset.model===modelKey);
-  });
-
-  const conf = document.getElementById('confusion-matrix');
-  conf.innerHTML = '';
-  conf.appendChild(document.createElement('div'));
-  CLASS_LABELS.forEach(l=>{
-    const h = document.createElement('div'); h.className='head'; h.textContent='Pred. '+l; conf.appendChild(h);
-  });
-  const maxVal = Math.max(...m.matrix.flat());
-  m.matrix.forEach((row,i)=>{
-    const rh = document.createElement('div'); rh.className='rowhead'; rh.textContent='Actual '+CLASS_LABELS[i];
-    conf.appendChild(rh);
-    row.forEach((val,j)=>{
-      const cell = document.createElement('div'); cell.className='cell';
-      const isDiag = i===j;
-      const intensity = 0.15 + 0.5*(val/maxVal);
-      cell.style.background = isDiag ? hexToRgba(CLASS_COLORS[i], intensity) : 'rgba(185,80,63,'+(0.1+0.4*(val/maxVal))+')';
-      cell.textContent = val;
-      conf.appendChild(cell);
-    });
-  });
-}
 function hexToRgba(hex, a){
   const v = hex.replace('#','');
   const r = parseInt(v.substring(0,2),16), g=parseInt(v.substring(2,4),16), b=parseInt(v.substring(4,6),16);
   return 'rgba('+r+','+g+','+b+','+a+')';
-}
-
-document.querySelectorAll('.toggle-btn').forEach(btn=>{
-  btn.addEventListener('click',()=>{
-    document.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    renderLab(btn.dataset.model);
-  });
-});
-
-function renderDist(){
-  const data = [["Legitimate",1200,CLASS_COLORS[0]],["Human phishing",900,CLASS_COLORS[1]],["AI phishing",500,CLASS_COLORS[2]]];
-  const max = Math.max(...data.map(d=>d[1]));
-  const chart = document.getElementById('dist-chart');
-  chart.innerHTML='';
-  data.forEach(([label,count,color])=>{
-    const row = document.createElement('div'); row.className='dist-row';
-    row.innerHTML = '<span class="dist-label">'+label+'</span>'+
-      '<div class="dist-track"><div class="dist-fill" style="width:'+(count/max*100)+'%;background:'+color+'"></div></div>'+
-      '<span class="dist-count">'+count+'</span>';
-    chart.appendChild(row);
-  });
 }
 
 const historySearchEl = document.getElementById('history-search');
@@ -1890,8 +2072,6 @@ const historyFilterEl = document.getElementById('history-filter');
 if(historySearchEl) historySearchEl.addEventListener('input', renderHistory);
 if(historyFilterEl) historyFilterEl.addEventListener('change', renderHistory);
 
-renderLab('tfidf');
-renderDist();
 renderDashboard();
 renderHistory();
 renderAnalytics();

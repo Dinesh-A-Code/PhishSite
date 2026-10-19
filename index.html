@@ -41,12 +41,11 @@
 
       <p class="nav-group-label">Intelligence</p>
       <button class="nav-item" data-view="analytics"><span class="nav-icon">📈</span>Analytics</button>
-      <button class="nav-item" data-view="lab"><span class="nav-icon">▤</span>Model Lab</button>
 
       <p class="nav-group-label">System</p>
       <button class="nav-item" data-view="settings"><span class="nav-icon">⚙</span>Settings</button>
-      <button class="nav-item" data-view="help" disabled><span class="nav-icon">?</span>Help</button>
-      <button class="nav-item" data-view="logout" disabled><span class="nav-icon">⏻</span>Logout</button>
+      <button class="nav-item" data-view="help"><span class="nav-icon">?</span>Help</button>
+      <button class="nav-item" id="nav-logout"><span class="nav-icon">⏻</span>Logout</button>
     </nav>
 
     <div class="sidebar-foot">
@@ -258,87 +257,84 @@
         </div>
       </div>
 
-      <div class="panel result-summary-panel" id="result-summary-panel">
-        <div class="summary-stat"><p class="summary-stat-label">Threat level</p><p class="summary-stat-value" id="summary-threat">—</p></div>
-        <div class="summary-stat"><p class="summary-stat-label">Classification</p><p class="summary-stat-value" id="summary-classification">—</p></div>
-        <div class="summary-stat"><p class="summary-stat-label">Confidence</p><p class="summary-stat-value" id="summary-confidence">—</p></div>
-        <div class="summary-stat"><p class="summary-stat-label">Signals found</p><p class="summary-stat-value" id="summary-signal-count">—</p></div>
-        <div class="summary-stat"><p class="summary-stat-label">URLs detected</p><p class="summary-stat-value" id="summary-url-count">—</p></div>
-        <div class="summary-stat summary-stat-wide"><p class="summary-stat-label">Sender</p><p class="summary-stat-value mono" id="summary-sender">—</p></div>
-        <div class="summary-stat summary-stat-wide"><p class="summary-stat-label">Received</p><p class="summary-stat-value mono" id="summary-received">—</p></div>
-      </div>
-
-      <div class="panel why-panel" id="why-panel">
+      <div class="panel lesson-panel" id="lesson-panel">
         <p class="panel-title">Why this result?</p>
-        <p class="confidence-explain" id="confidence-explain">Run a scan to see an explanation here.</p>
-        <div class="why-groups">
-          <div class="why-group why-group-trust">
-            <p class="why-group-title">Trust indicators</p>
-            <ul class="why-list" id="why-trust-list"></ul>
-          </div>
-          <div class="why-group why-group-risk">
-            <p class="why-group-title">Risk indicators</p>
-            <ul class="why-list" id="why-risk-list"></ul>
-          </div>
-          <div class="why-group why-group-attention">
-            <p class="why-group-title">Attention indicators</p>
-            <ul class="why-list" id="why-attention-list"></ul>
-          </div>
-        </div>
+        <div id="lesson-body"><p class="gmail-desc">Run a scan to see a plain-language explanation here.</p></div>
       </div>
 
-      <div class="panel auth-panel" id="auth-panel">
-        <p class="panel-title">Email authentication</p>
-        <p class="auth-unavailable" id="auth-unavailable">Authentication headers aren't available for manually entered email — connect Gmail and scan a real message to see SPF/DKIM/DMARC results here.</p>
-        <div class="auth-grid" id="auth-grid" style="display:none;">
-          <div class="auth-stat"><p class="summary-stat-label">SPF</p><span class="auth-status-badge" id="auth-spf">—</span></div>
-          <div class="auth-stat"><p class="summary-stat-label">DKIM</p><span class="auth-status-badge" id="auth-dkim">—</span></div>
-          <div class="auth-stat"><p class="summary-stat-label">DMARC</p><span class="auth-status-badge" id="auth-dmarc">—</span></div>
-          <div class="auth-stat"><p class="summary-stat-label">Sender alignment</p><span class="auth-status-badge" id="auth-alignment">—</span></div>
+      <div class="panel annotated-panel" id="annotated-panel">
+        <p class="panel-title">The email, with suspicious parts highlighted</p>
+        <div class="annotated-legend">
+          <span class="legend-item"><span class="legend-swatch sw-security"></span>Security / trusted wording</span>
+          <span class="legend-item"><span class="legend-swatch sw-human"></span>Urgency / warning wording</span>
+          <span class="legend-item"><span class="legend-swatch sw-ai"></span>AI-style hedging phrasing</span>
+          <span class="legend-item"><span class="legend-swatch sw-neutral"></span>Generic greeting</span>
+          <span class="legend-item"><span class="legend-swatch sw-error"></span>Spelling / grammar irregularity</span>
         </div>
-        <ul class="auth-evidence-list" id="auth-evidence-list"></ul>
+        <div class="annotated-meta" id="annotated-meta"></div>
+        <div class="annotated-body" id="annotated-body">Run a scan first.</div>
       </div>
 
-      <div class="panel attachment-panel" id="attachment-panel">
-        <p class="panel-title">Attachment analysis</p>
-        <p class="auth-unavailable" id="attachment-unavailable">Attachment data isn't available for manually entered email — connect Gmail and scan a real message to see attachment risk here.</p>
-        <p class="auth-unavailable" id="attachment-none" style="display:none;">No attachments were found on this message.</p>
-        <table class="attachment-table" id="attachment-table" style="display:none;">
-          <thead><tr><th>Filename</th><th>Type</th><th>Risk</th><th>Reason</th></tr></thead>
-          <tbody id="attachment-table-body"></tbody>
-        </table>
-      </div>
+      <!-- Detector output for anyone who wants it; hidden by default so the result reads in plain language. -->
+      <details class="tech-details" id="tech-details">
+        <summary>Technical details</summary>
 
-      <div class="results-grid">
-        <div class="panel annotated-panel" id="annotated-panel">
-          <p class="panel-title">Annotated email</p>
-          <div class="annotated-legend">
-            <span class="legend-item"><span class="legend-swatch sw-security"></span>Security / trusted wording</span>
-            <span class="legend-item"><span class="legend-swatch sw-human"></span>Urgency / warning wording</span>
-            <span class="legend-item"><span class="legend-swatch sw-ai"></span>AI-style hedging phrasing</span>
-            <span class="legend-item"><span class="legend-swatch sw-neutral"></span>Generic greeting</span>
-            <span class="legend-item"><span class="legend-swatch sw-error"></span>Spelling / grammar irregularity</span>
-          </div>
-          <div class="annotated-meta" id="annotated-meta"></div>
-          <div class="annotated-body" id="annotated-body">Run a scan first.</div>
+        <div class="panel result-summary-panel" id="result-summary-panel">
+          <div class="summary-stat"><p class="summary-stat-label">Threat level</p><p class="summary-stat-value" id="summary-threat">—</p></div>
+          <div class="summary-stat"><p class="summary-stat-label">Classification</p><p class="summary-stat-value" id="summary-classification">—</p></div>
+          <div class="summary-stat"><p class="summary-stat-label">Confidence</p><p class="summary-stat-value" id="summary-confidence">—</p></div>
+          <div class="summary-stat"><p class="summary-stat-label">Signals found</p><p class="summary-stat-value" id="summary-signal-count">—</p></div>
+          <div class="summary-stat"><p class="summary-stat-label">URLs detected</p><p class="summary-stat-value" id="summary-url-count">—</p></div>
+          <div class="summary-stat summary-stat-wide"><p class="summary-stat-label">Sender</p><p class="summary-stat-value mono" id="summary-sender">—</p></div>
+          <div class="summary-stat summary-stat-wide"><p class="summary-stat-label">Received</p><p class="summary-stat-value mono" id="summary-received">—</p></div>
         </div>
 
-        <div class="side-col">
-          <div class="panel">
-            <p class="panel-title">Top signals</p>
-            <ul class="signals" id="signals-list"></ul>
-          </div>
-          <div class="panel risk-panel" id="risk-panel">
-            <p class="panel-title">Risk summary</p>
-            <p id="risk-text">—</p>
-            <p class="recommend" id="recommend-text"></p>
-          </div>
-          <div class="panel action-panel" id="action-panel">
-            <p class="panel-title">What should you do?</p>
-            <ul class="action-list" id="action-list"></ul>
+        <div class="panel why-panel" id="why-panel">
+          <p class="panel-title">Detection signals</p>
+          <p class="confidence-explain" id="confidence-explain">Run a scan to see an explanation here.</p>
+          <div class="why-groups">
+            <div class="why-group why-group-trust">
+              <p class="why-group-title">Trust indicators</p>
+              <ul class="why-list" id="why-trust-list"></ul>
+            </div>
+            <div class="why-group why-group-risk">
+              <p class="why-group-title">Risk indicators</p>
+              <ul class="why-list" id="why-risk-list"></ul>
+            </div>
+            <div class="why-group why-group-attention">
+              <p class="why-group-title">Attention indicators</p>
+              <ul class="why-list" id="why-attention-list"></ul>
+            </div>
           </div>
         </div>
-      </div>
+
+        <div class="panel auth-panel" id="auth-panel">
+          <p class="panel-title">Email authentication</p>
+          <p class="auth-unavailable" id="auth-unavailable">Authentication headers aren't available for manually entered email — connect Gmail and scan a real message to see SPF/DKIM/DMARC results here.</p>
+          <div class="auth-grid" id="auth-grid" style="display:none;">
+            <div class="auth-stat"><p class="summary-stat-label">SPF</p><span class="auth-status-badge" id="auth-spf">—</span></div>
+            <div class="auth-stat"><p class="summary-stat-label">DKIM</p><span class="auth-status-badge" id="auth-dkim">—</span></div>
+            <div class="auth-stat"><p class="summary-stat-label">DMARC</p><span class="auth-status-badge" id="auth-dmarc">—</span></div>
+            <div class="auth-stat"><p class="summary-stat-label">Sender alignment</p><span class="auth-status-badge" id="auth-alignment">—</span></div>
+          </div>
+          <ul class="auth-evidence-list" id="auth-evidence-list"></ul>
+        </div>
+
+        <div class="panel attachment-panel" id="attachment-panel">
+          <p class="panel-title">Attachment analysis</p>
+          <p class="auth-unavailable" id="attachment-unavailable">Attachment data isn't available for manually entered email — connect Gmail and scan a real message to see attachment risk here.</p>
+          <p class="auth-unavailable" id="attachment-none" style="display:none;">No attachments were found on this message.</p>
+          <table class="attachment-table" id="attachment-table" style="display:none;">
+            <thead><tr><th>Filename</th><th>Type</th><th>Risk</th><th>Reason</th></tr></thead>
+            <tbody id="attachment-table-body"></tbody>
+          </table>
+        </div>
+
+        <div class="panel signals-panel">
+          <p class="panel-title">Top signals</p>
+          <ul class="signals" id="signals-list"></ul>
+        </div>
+      </details>
 
       <div class="heuristic-disclaimer">
         <span class="disclaimer-icon">ℹ</span>
@@ -383,66 +379,6 @@
       <div id="analytics-body"></div>
     </section>
 
-    <!-- LAB VIEW -->
-    <section class="view" id="view-lab">
-      <div class="view-head">
-        <p class="eyebrow">Model lab</p>
-        <div class="view-head-title-row">
-          <h1>Model evaluation dashboard</h1>
-          <span class="badge-demo">Demo data</span>
-        </div>
-        <p class="lede">Sample results shown for illustration — no trained model is connected yet. Point PhishSite at a trained checkpoint to populate this view with live metrics.</p>
-      </div>
-
-      <div class="lab-toggle">
-        <button class="toggle-btn active" data-model="tfidf">TF-IDF + XGBoost</button>
-        <button class="toggle-btn" data-model="distilbert">DistilBERT-inspired</button>
-      </div>
-
-      <div class="panel lab-overview">
-        <div class="lab-overview-row">
-          <div>
-            <p class="lab-overview-name" id="lab-overview-name">TF-IDF + XGBoost</p>
-            <p class="gmail-desc" id="lab-overview-note">Lightweight baseline, fast to retrain</p>
-          </div>
-          <span class="badge-demo">Demo data</span>
-        </div>
-      </div>
-
-      <div class="kpi-row" id="kpi-row"></div>
-
-      <div class="lab-grid">
-        <div class="panel">
-          <p class="panel-title">Model comparison <span class="badge-demo badge-demo-sm">Demo</span></p>
-          <table class="cmp-table" id="cmp-table">
-            <thead><tr><th>Model</th><th>Accuracy</th><th>F1-score</th><th>Notes</th></tr></thead>
-            <tbody>
-              <tr data-model="tfidf"><td>TF-IDF + XGBoost</td><td>91.4%</td><td>89.8%</td><td>Lightweight baseline, fast to retrain</td></tr>
-              <tr data-model="distilbert"><td>DistilBERT-inspired</td><td>94.7%</td><td>93.9%</td><td>Higher accuracy, heavier inference cost</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="panel">
-          <p class="panel-title">Class distribution (training set) <span class="badge-demo badge-demo-sm">Demo</span></p>
-          <div class="dist-chart" id="dist-chart"></div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <p class="panel-title">Confusion matrix <span class="badge-demo badge-demo-sm">Demo</span></p>
-        <div class="confusion" id="confusion-matrix"></div>
-      </div>
-
-      <div class="panel">
-        <p class="panel-title">Adversarial examples &amp; failure cases</p>
-        <ul class="fail-list">
-          <li><strong>Polished, legitimate-like phishing</strong> — fluent AI phishing with a convincing footer is occasionally scored as Legitimate; mitigated by weighting URL and sender signals more heavily.</li>
-          <li><strong>Tone-mismatched email</strong> — a human-written phishing email rewritten in a formal register drifts toward the AI-phishing class; flagged for adversarial retraining.</li>
-          <li><strong>Short transactional emails</strong> — very short legitimate emails sometimes lack enough signal for a confident prediction.</li>
-        </ul>
-      </div>
-    </section>
-
     <!-- SETTINGS VIEW -->
     <section class="view" id="view-settings">
       <div class="view-head">
@@ -452,6 +388,112 @@
       </div>
 
       <div id="settings-body"></div>
+    </section>
+
+    <!-- HELP VIEW -->
+    <section class="view" id="view-help">
+      <div class="view-head">
+        <p class="eyebrow">Support</p>
+        <h1>How to use PhishSite</h1>
+        <p class="lede">PhishSite checks an email and tells you, in plain language, whether it looks safe or like a phishing scam — and why. Here's how to get started.</p>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">Two ways to check an email</p>
+        <div class="help-ways">
+          <div class="help-way">
+            <p class="help-way-title">Paste an email</p>
+            <ol class="help-steps">
+              <li>Open <button class="help-link" data-goto="scan">Scan Email</button>.</li>
+              <li>Copy the email's subject, sender address, any links and the message text into the matching boxes. Only the body is required.</li>
+              <li>Click <b>Analyze email</b>.</li>
+            </ol>
+            <p class="gmail-desc">Not sure what to paste? Click one of the <b>Try a sample</b> buttons to see an example.</p>
+          </div>
+          <div class="help-way">
+            <p class="help-way-title">Scan your Gmail inbox</p>
+            <ol class="help-steps">
+              <li>Open <button class="help-link" data-goto="inbox">Inbox</button> and click <b>Continue with Google</b>.</li>
+              <li>Sign in with Google and allow read-only access.</li>
+              <li>Choose how many recent emails to fetch (up to 100) and click <b>Fetch emails</b>.</li>
+              <li>Click <b>Scan</b> next to one email, or <b>Scan all fetched</b> to check them all at once.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">Reading your result</p>
+        <ol class="help-steps">
+          <li><b>The verdict</b> at the top tells you what PhishSite thinks the email is, and how sure it is.</li>
+          <li><b>Why this result?</b> lists each warning sign (or good sign) it found, shows you where it appears in the email, and explains why it matters.</li>
+          <li><b>The highlighted email</b> marks the suspicious words and phrases directly in the message.</li>
+          <li><b>How to check an email like this yourself</b> gives simple steps you can follow before you click or reply.</li>
+        </ol>
+        <div class="help-verdicts">
+          <div class="help-verdict"><span class="help-dot" style="background:var(--legit);"></span><div><b>Legitimate</b><p class="gmail-desc">No common scam tricks were found. Still stay alert for anything unexpected.</p></div></div>
+          <div class="help-verdict"><span class="help-dot" style="background:var(--human);"></span><div><b>Human phishing</b><p class="gmail-desc">A scam written by a person — often rushed, with urgent threats, generic greetings or spelling mistakes.</p></div></div>
+          <div class="help-verdict"><span class="help-dot" style="background:var(--ai);"></span><div><b>AI phishing</b><p class="gmail-desc">A scam that reads smoothly and politely, as if written by an AI tool. Good writing doesn't make an email safe.</p></div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">Other things you can do</p>
+        <ul class="help-list">
+          <li><button class="help-link" data-goto="history">History</button> lists every email you've checked in this session. Click one to see its result again.</li>
+          <li><button class="help-link" data-goto="analytics">Analytics</button> and the <button class="help-link" data-goto="dashboard">Dashboard</button> summarize what you've scanned so far.</li>
+          <li><b>Export report</b> on a result downloads that email's analysis as a file you can keep or share.</li>
+          <li><button class="help-link" data-goto="settings">Settings</button> lets you disconnect Gmail or clear your session history.</li>
+          <li><b>Logout</b> disconnects Gmail and clears everything from this session in one step.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <p class="panel-title">Frequently asked questions</p>
+        <div class="faq">
+          <details class="faq-item">
+            <summary>Is PhishSite safe to connect to my Gmail?</summary>
+            <p>Yes. You sign in on Google's own page, so PhishSite never sees your password. It only asks for read-only access — it can read messages to check them, but it can't send, delete or change anything in your mailbox.</p>
+          </details>
+          <details class="faq-item">
+            <summary>Do you store my emails?</summary>
+            <p>No. Emails are checked right here in your browser and are not sent to any PhishSite server. Your scan history only lasts until you close the tab, log out, or clear it in Settings. See the <a href="privacy.html">Privacy Policy</a> for details.</p>
+          </details>
+          <details class="faq-item">
+            <summary>How accurate is PhishSite?</summary>
+            <p>PhishSite looks for the warning signs scam emails commonly use — suspicious links, lookalike addresses, pressure to act fast, failed sender checks and more. It catches many scams, but no automatic tool is perfect. Use the result as a guide and trust your own judgment for anything involving money or passwords.</p>
+          </details>
+          <details class="faq-item">
+            <summary>What's the difference between "Human phishing" and "AI phishing"?</summary>
+            <p>Both are scams. Human phishing tends to be hurried and pushy, often with mistakes. AI phishing is fluent and polite, which can make it more convincing. Either way, don't click its links or reply.</p>
+          </details>
+          <details class="faq-item">
+            <summary>An email I know is real was flagged. Why?</summary>
+            <p>Some real emails — like newsletters and offers — use the same tactics as scams, such as urgent wording or "Dear Customer". Open <b>Why this result?</b> to see exactly what was flagged. If you're unsure, check by going to the company's official website or app yourself instead of using the email's links.</p>
+          </details>
+          <details class="faq-item">
+            <summary>What does the confidence percentage mean?</summary>
+            <p>It shows how strongly the warning signs (or good signs) point to the verdict. A higher number means the signs clearly agree; a lower number means the email is a closer call and deserves a careful look.</p>
+          </details>
+          <details class="faq-item">
+            <summary>What should I do if an email is phishing?</summary>
+            <p>Don't click its links, open its attachments or reply. In Gmail, open the email, click the ⋮ menu and choose <b>Report phishing</b>. If it claims something is wrong with an account, log in through the official website or app to check.</p>
+          </details>
+          <details class="faq-item">
+            <summary>I clicked a link or entered my password. What now?</summary>
+            <p>Change that password right away (and anywhere else you use it), turn on two-step verification, and contact your bank if you shared card or payment details. Watch your accounts for anything unusual.</p>
+          </details>
+          <details class="faq-item">
+            <summary>Why can't I see sender checks or attachments for a pasted email?</summary>
+            <p>Sender verification and attachment details come from the email's hidden information, which isn't included when you copy and paste. Scan the email through the Gmail inbox to get these checks too.</p>
+          </details>
+          <details class="faq-item">
+            <summary>How do I disconnect Gmail?</summary>
+            <p>Click <b>Disconnect</b> in the Inbox, use <b>Disconnect Gmail</b> in Settings, or click <b>Logout</b>. Access is revoked immediately. You can also remove PhishSite anytime from your Google Account's security settings.</p>
+          </details>
+        </div>
+        <p class="gmail-desc help-contact">Still need help? <a href="mailto:adinesh09092005@gmail.com">Contact support</a>.</p>
+      </div>
     </section>
 
     <footer class="app-footer">
