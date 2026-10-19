@@ -263,16 +263,11 @@
       </div>
 
       <div class="panel annotated-panel" id="annotated-panel">
-        <p class="panel-title">The email, with suspicious parts highlighted</p>
-        <div class="annotated-legend">
-          <span class="legend-item"><span class="legend-swatch sw-security"></span>Security / trusted wording</span>
-          <span class="legend-item"><span class="legend-swatch sw-human"></span>Urgency / warning wording</span>
-          <span class="legend-item"><span class="legend-swatch sw-ai"></span>AI-style hedging phrasing</span>
-          <span class="legend-item"><span class="legend-swatch sw-neutral"></span>Generic greeting</span>
-          <span class="legend-item"><span class="legend-swatch sw-error"></span>Spelling / grammar irregularity</span>
-        </div>
+        <p class="panel-title">Where we found it in the email</p>
         <div class="annotated-meta" id="annotated-meta"></div>
+        <div class="annotated-legend" id="annotated-legend"></div>
         <div class="annotated-body" id="annotated-body">Run a scan first.</div>
+        <button class="btn-secondary annotated-toggle" id="btn-annotated-toggle" hidden>Show full email</button>
       </div>
 
       <!-- Detector output for anyone who wants it; hidden by default so the result reads in plain language. -->

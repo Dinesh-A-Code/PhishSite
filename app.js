@@ -103,6 +103,9 @@ const TRUSTED_DOMAINS = {
 const TRUSTED_ROOT_DOMAINS = Object.values(TRUSTED_DOMAINS).flat();
 const BRAND_KEYWORDS = ["google","microsoft","apple","paypal","amazon","linkedin","github"];
 const LEET_MAP = {'0':'o','1':'l','3':'e','5':'s','7':'t','8':'b'};
+// Letter pairs that read as one letter at a glance ("rnicrosoft" for "microsoft").
+const LOOKALIKE_PAIRS = {rn:'m', vv:'w'};
+const undoLookalikePairs = s => s.replace(/rn|vv/g, p=>LOOKALIKE_PAIRS[p]);
 const RISKY_TLDS = ["ru","xyz","top","click","zip","tk"];
 
 function findMatches(text, list, category){
@@ -187,19 +190,25 @@ function isTrustedHostname(host){
 function isLookalikeHostname(host){
   if(!host || isTrustedHostname(host)) return false;
   const core = host.replace(/\.(com|net|org|co|io|info|biz)$/i,'');
+  const plain = core.replace(/-/g,'');
+  // Letter-pair swaps only count when they are what produces the brand name.
+  if(BRAND_KEYWORDS.some(b => !plain.includes(b) && undoLookalikePairs(plain).includes(b))) return true;
   if(!/[0-9]/.test(core) && !/--/.test(core)) return false; // only real char-substitution/hyphen-stuffing candidates
   const normalized = core.split('').map(ch=>LEET_MAP[ch]||ch).join('').replace(/-/g,'');
   return BRAND_KEYWORDS.some(b => normalized.includes(b));
 }
 
 // Explains how a lookalike hostname imitates a brand, for the learning panel: which brand,
-// which characters were swapped (e.g. "1" standing in for "l"), and the brand's real domain.
+// which characters were swapped (e.g. "1" for "l", "rn" for "m"), and the brand's real domain.
 function describeLookalike(host){
   const core = host.replace(/\.(com|net|org|co|io|info|biz)$/i,'');
   const swaps = [];
   core.split('').forEach(ch=>{ if(LEET_MAP[ch] && !swaps.some(s=>s[0]===ch)) swaps.push([ch, LEET_MAP[ch]]); });
-  const normalized = core.split('').map(ch=>LEET_MAP[ch]||ch).join('').replace(/-/g,'');
+  const leetFree = core.split('').map(ch=>LEET_MAP[ch]||ch).join('').replace(/-/g,'');
+  const normalized = undoLookalikePairs(leetFree);
   const brandKey = BRAND_KEYWORDS.find(b=>normalized.includes(b));
+  // Only report a letter-pair swap when it is what spells the brand ("learn" is not a trick).
+  if(brandKey && !leetFree.includes(brandKey)) Object.keys(LOOKALIKE_PAIRS).forEach(p=>{ if(leetFree.includes(p)) swaps.push([p, LOOKALIKE_PAIRS[p]]); });
   const brandName = Object.keys(TRUSTED_DOMAINS).find(k=>k.toLowerCase()===brandKey) || brandKey;
   return {brand:brandName, realDomain: brandName && TRUSTED_DOMAINS[brandName] ? TRUSTED_DOMAINS[brandName][0] : null, swaps, hyphens:/-/.test(core)};
 }
@@ -1834,7 +1843,8 @@ function buildLesson(r){
   if(r.label!=='legit' || creds.length) steps.push('Never enter passwords or card details from an email link. Open the official app or type the website address yourself.');
   steps.push('If the email says something is wrong with your account, check by logging in to the official site directly, or call the company\'s official number.');
   if(att) steps.push('Don\'t open attachments you weren\'t expecting, even from people you know.');
-  if(r.label!=='legit') steps.push('Report it: in Gmail, open the email, click the ⋮ menu and choose "Report phishing".');
+  if(weakOnly) steps.push('If you don\'t want it, simply delete it or unsubscribe. Only report it as phishing if the sender or links turn out to be fake.');
+  else if(r.label!=='legit') steps.push('Report it: in Gmail, open the email, click the ⋮ menu and choose "Report phishing".');
 
   return {tone, headline, summary, note, cards:[...riskCards, ...cautionCards, ...cards.filter(c=>c.tone==='good')], steps};
 }
@@ -1878,6 +1888,57 @@ function renderLesson(r){
   return lesson;
 }
 
+// Plain-word names for each highlight colour, shown only for colours that appear in this email.
+const MARK_LEGEND = [
+  ['tag-human','sw-human','Pressure or a request for details'],
+  ['tag-ai','sw-ai','Template-like, overly polite wording'],
+  ['tag-neutral','sw-neutral','Generic greeting'],
+  ['tag-error','sw-error','Spelling mistake'],
+  ['tag-security','sw-security','Normal security-notice wording']
+];
+
+// Short, readable view of the scanned email: sender, subject and link domains, then only the
+// lines that contain a highlight (the rest collapsed to "…"), with a toggle for the full text.
+function renderAnnotatedEmail(r){
+  const hosts = uniqCI(classifyUrls(r.urls).hosts);
+  const chip = flagged => flagged ? '<span class="flag-chip">suspicious</span>' : '';
+  document.getElementById('annotated-meta').innerHTML =
+    '<div><b>From:</b> '+escapeHtml(r.sender||'—')+chip(r.suspiciousSender)+'</div>'+
+    '<div><b>Subject:</b> '+escapeHtml(r.subject||'—')+'</div>'+
+    (hosts.length ? '<div title="'+escapeHtml(r.urls||'')+'"><b>Links go to:</b> '+escapeHtml(hosts.slice(0,3).join(', '))+(hosts.length>3?' and '+(hosts.length-3)+' more':'')+chip(r.suspiciousUrl)+'</div>' : '');
+
+  const full = r.annotatedHtml || '';
+  const legend = MARK_LEGEND.filter(([cls])=>full.includes('class="'+cls+'"'));
+  document.getElementById('annotated-legend').innerHTML = legend.length
+    ? legend.map(([,sw,text])=>'<span class="legend-item"><span class="legend-swatch '+sw+'"></span>'+text+'</span>').join('')+
+      '<span class="legend-item legend-hint">Hover a highlight to see why</span>'
+    : '';
+
+  // Marks never span a line, so splitting on <br> keeps every highlight intact.
+  const lines = full.split('<br>');
+  const excerpt = [];
+  lines.forEach((line, i)=>{
+    if(!line.includes('<mark')) return;
+    if(excerpt.length && !lines[i-1].includes('<mark')) excerpt.push('<span class="annotated-gap">…</span>');
+    excerpt.push(line.trim());
+  });
+  const bodyEl = document.getElementById('annotated-body');
+  const toggle = document.getElementById('btn-annotated-toggle');
+  const short = excerpt.length
+    ? excerpt.join('<br>')
+    : '<span class="annotated-empty">Nothing in the message text itself was highlighted.</span>';
+  const hasMore = lines.some(l=>l.trim() && !l.includes('<mark'));
+  let showingFull = false;
+  const paint = ()=>{
+    bodyEl.innerHTML = showingFull ? full : short;
+    bodyEl.classList.toggle('annotated-excerpt', !showingFull);
+    toggle.textContent = showingFull ? 'Show only the highlighted parts' : 'Show full email';
+  };
+  toggle.hidden = !hasMore;
+  toggle.onclick = ()=>{ showingFull = !showingFull; paint(); };
+  paint();
+}
+
 function renderResults(r){
   const banner = document.getElementById('result-banner');
   banner.style.borderLeftColor = r.color;
@@ -1918,13 +1979,7 @@ function renderResults(r){
   document.getElementById('summary-url-count').textContent = urlCount;
   document.getElementById('summary-sender').textContent = r.sender || '—';
 
-  let metaHtml = '';
-  metaHtml += '<div><b>Subject:</b> '+escapeHtml(r.subject||'—')+'</div>';
-  metaHtml += '<div><b>Sender:</b> '+escapeHtml(r.sender||'—')+(r.suspiciousSender?'<span class="flag-chip">flagged</span>':'')+'</div>';
-  metaHtml += '<div><b>URLs:</b> '+escapeHtml(r.urls||'—')+(r.suspiciousUrl?'<span class="flag-chip">flagged</span>':'')+'</div>';
-  metaHtml += '<div><b>Metadata:</b> '+escapeHtml(r.metadata||'—')+'</div>';
-  document.getElementById('annotated-meta').innerHTML = metaHtml;
-  document.getElementById('annotated-body').innerHTML = r.annotatedHtml;
+  renderAnnotatedEmail(r);
 
   document.getElementById('confidence-explain').textContent = confidenceExplanation(r.confidence);
 
